@@ -1,0 +1,47 @@
+# Environment variables and local configuration
+.env
+.env.*
+!.env.example
+/config/local.php
+/config/config.local.php
+
+# PHP logs, errors, and runtime files
+*.log
+error_log
+php_errors.log
+sess_*
+
+# Temporary files and caches
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+/cache/
+/tmp/
+
+# Local database files and generated backups
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+*.sql.zip
+/database/backups/
+
+# Local TLS certificates and private keys
+*.key
+*.p12
+*.pfx
+/local-certs/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor and IDE settings
+.vscode/
+.idea/
+*.code-workspace
