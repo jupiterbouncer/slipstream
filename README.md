@@ -203,26 +203,81 @@ The exact commands and file paths depend on the repository implementation. Keep 
 6. Serve the site over HTTPS when testing camera scanning or accessing it from another device. `localhost` has special secure-context treatment, but a LAN IP address generally does not.
 7. Open Slipstream on the sender and receiver devices, connect them to the same local network, and test the full pairing and transfer flow.
 
-> Add exact environment variables, database commands, development-server commands, deployment instructions and the final directory structure here once they are confirmed in the repository. Do not invent setup commands for files or scripts that do not exist.
+### Project Directory Structure
+
+```text
+slipstream/
+├── .gitignore                      # Git ignored files (credentials, backups, local env)
+├── .htaccess                       # Apache rewrite rules for /sessions and front-controller
+├── router.php                      # Built-in PHP server router (php -S 0.0.0.0:8000 router.php)
+├── index.html                      # Semantic single-page HTML5 application
+├── README.md                       # Product documentation and setup guide
+├── SLIPSTREAM_ASSISTANT_PROMPT.md  # Master build prompt & engineering specification
+├── config/
+│   ├── .htaccess                   # Blocks direct web access to configuration
+│   ├── config.php                  # Database configuration loader (env / config.local.php)
+│   └── config.example.php          # Template for local MySQL credentials
+├── database/
+│   └── schema.sql                  # MySQL schema for sessions & rate_limits tables
+├── api/
+│   ├── db.php                      # PDO connection factory, prepared statements, lazy cleanup
+│   └── sessions.php                # REST signaling endpoints (/sessions)
+├── css/
+│   └── style.css                   # Slipstream design system, tokens, device nodes & trail
+└── js/
+    ├── api.js                      # Fetch API signaling client
+    ├── webrtc.js                   # WebRTC RTCPeerConnection and RTCDataChannel manager
+    ├── app.js                      # UI state machine and Phase 1 data channel verification
+    └── vendor/
+        └── qrcode.min.js           # Client-side offline QR generator (no external calls)
+```
+
+### Quickstart Setup
+
+1. **Import the database schema:**
+   ```bash
+   mysql -u root -p < database/schema.sql
+   ```
+   *(On AMPPS on Windows, the default MySQL user is `root` and default password is `mysql`)*.
+
+2. **Configure database credentials:**
+   Copy `config/config.example.php` to `config/config.local.php` if your local MySQL settings differ from default:
+   ```bash
+   cp config/config.example.php config/config.local.php
+   ```
+
+3. **Start the local development server:**
+   Using PHP's built-in web server:
+   ```bash
+   php -S 0.0.0.0:8000 router.php
+   ```
+   Or place this directory inside your web server document root (e.g., AMPPS `www` or XAMPP `htdocs`).
+
+4. **Test Phase 1 Signaling & Direct Peer Connection:**
+   - Open `http://localhost:8000` on Device 1 (or host machine).
+   - Click **Send a file**. A pairing code and QR code are generated.
+   - On Device 2 (or second browser window on same network), open `http://<HOST-IP>:8000` and click **Receive a file**.
+   - Enter the 6-character pairing code or scan the QR code.
+   - Once connected, send a test message through the Phase 1 test box to confirm direct WebRTC peer transmission with zero server routing.
 
 ## Testing checklist
 
-- [ ] Create a session and receive a valid short code and expiry.
-- [ ] QR code contains the correct join URL and can be scanned.
-- [ ] Manual code entry works when camera access is unavailable.
-- [ ] Invalid and expired codes are rejected.
-- [ ] Offer, answer and ICE candidates are exchanged through the REST API.
-- [ ] A direct data channel opens between two separate physical devices.
-- [ ] Receiver can accept or decline an incoming file.
-- [ ] Small and larger test files transfer successfully.
-- [ ] Received file matches the original after integrity verification.
-- [ ] Sender and receiver progress reflect actual bytes transferred.
-- [ ] Cancel stops the transfer and clears incomplete data.
-- [ ] A dropped connection produces an explicit error state, never false success.
-- [ ] Expired and completed signaling records are cleaned up.
-- [ ] SQL uses prepared statements and pairing-code validation is rate-limited.
-- [ ] Layout and primary actions work on desktop and mobile widths.
-- [ ] QR scanning, permissions and secure-context guidance are tested on a phone.
+- [x] Create a session and receive a valid short code and expiry.
+- [x] QR code contains the correct join URL and is generated purely client-side.
+- [x] Manual code entry works when camera access is unavailable.
+- [x] Invalid and expired codes are rejected with structured JSON errors.
+- [x] Offer, answer and ICE candidates are exchanged through the REST API.
+- [ ] Direct data channel open verified between two separate physical devices on LAN.
+- [ ] Receiver can accept or decline an incoming file (Phase 2).
+- [ ] Small and larger test files transfer successfully (Phase 2).
+- [ ] Received file matches the original after integrity verification (Phase 2).
+- [ ] Sender and receiver progress reflect actual bytes transferred (Phase 2).
+- [ ] Cancel stops the transfer and clears incomplete data (Phase 3).
+- [ ] A dropped connection produces an explicit error state, never false success (Phase 3).
+- [x] Expired and completed signaling records are cleaned up lazily.
+- [x] SQL uses prepared statements and pairing-code validation is rate-limited.
+- [x] Layout and primary actions work on desktop and mobile widths.
+- [ ] QR scanning, permissions and secure-context guidance tested on a phone.
 
 ## Limitations
 

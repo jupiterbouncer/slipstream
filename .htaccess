@@ -1,0 +1,31 @@
+# Slipstream Apache Rewrite Rules
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Block access to hidden files and sensitive directories
+    RewriteRule ^(config|database|\.git|\.env) - [F,L]
+    RewriteRule \.(sql|log|md|example|gitignore)$ - [F,L]
+
+    # Route /sessions requests to api/sessions.php
+    RewriteRule ^sessions(/.*)?$ api/sessions.php [QSA,L]
+
+    # Serve existing files and directories directly
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Default all other requests to index.html
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+# Prevent directory listings
+Options -Indexes
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set Referrer-Policy "no-referrer"
+</IfModule>

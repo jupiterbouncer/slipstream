@@ -1,0 +1,719 @@
+/**
+ * Slipstream Design System & Layout
+ * Built strictly according to Slipstream Visual Identity (§9).
+ * Tokens: Fog, Graphite, Slip Coral, Vector, Steel, Mist.
+ */
+
+:root {
+  --color-fog: #F4F5F7;
+  --color-graphite: #15171B;
+  --color-coral: #FF5A3C;
+  --color-vector: #2E9E83;
+  --color-steel: #5B6472;
+  --color-mist: #E7E9ED;
+  --color-white: #FFFFFF;
+  --color-error: #E53935;
+
+  --font-heading: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 9999px;
+
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+}
+
+/* Base & Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-fog);
+  color: var(--color-graphite);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* App Container */
+.app-container {
+  max-width: 680px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-mist);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: var(--color-graphite);
+}
+
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--color-coral);
+}
+
+.brand-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.nav-links {
+  display: flex;
+  gap: 1rem;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-steel);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.nav-btn:hover {
+  color: var(--color-graphite);
+}
+
+/* Main Content Views */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.screen-view {
+  display: none;
+  flex-direction: column;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.screen-view.active {
+  display: flex;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Typography & Headings */
+h1, h2, h3 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+  color: var(--color-graphite);
+}
+
+.hero-title {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0.5rem;
+}
+
+.hero-subtitle {
+  font-size: 1rem;
+  color: var(--color-steel);
+  margin-bottom: 2rem;
+}
+
+.trust-statement {
+  background-color: var(--color-mist);
+  border-radius: var(--radius-md);
+  padding: 0.875rem 1rem;
+  font-size: 0.85rem;
+  color: var(--color-steel);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 2rem;
+}
+
+.trust-statement svg {
+  flex-shrink: 0;
+  color: var(--color-steel);
+}
+
+/* Cards & Buttons */
+.card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 480px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.action-card {
+  background-color: var(--color-white);
+  border: 1px solid var(--color-mist);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.action-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-steel);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+}
+
+.action-card-primary {
+  border-color: rgba(255, 90, 60, 0.3);
+}
+
+.action-card-primary:hover {
+  border-color: var(--color-coral);
+}
+
+.action-card .card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-fog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+  color: var(--color-graphite);
+}
+
+.action-card-primary .card-icon {
+  background-color: rgba(255, 90, 60, 0.1);
+  color: var(--color-coral);
+}
+
+.action-card h3 {
+  font-size: 1.15rem;
+  margin-bottom: 0.25rem;
+}
+
+.action-card p {
+  font-size: 0.85rem;
+  color: var(--color-steel);
+}
+
+/* Pairing View (Host) */
+.pairing-card {
+  background: var(--color-white);
+  border: 1px solid var(--color-mist);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+/* QR Code: strictly plain black on white, high contrast, proper quiet zone */
+.qr-container {
+  background: #FFFFFF;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-mist);
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.qr-container canvas, .qr-container img {
+  display: block;
+}
+
+.pairing-code-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pairing-code-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-steel);
+  font-weight: 600;
+}
+
+.pairing-code-digits {
+  font-family: var(--font-heading);
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--color-graphite);
+}
+
+.waiting-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-steel);
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-coral);
+  animation: pulseSlow 2s infinite ease-in-out;
+}
+
+@keyframes pulseSlow {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.4; }
+}
+
+.expiry-text {
+  font-size: 0.75rem;
+  color: var(--color-steel);
+}
+
+/* Join View (Receiver) */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.input-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-graphite);
+}
+
+.code-input {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  letter-spacing: 0.2em;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-mist);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  color: var(--color-graphite);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.code-input:focus {
+  border-color: var(--color-coral);
+}
+
+/* Standard Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+  text-decoration: none;
+}
+
+.btn-primary {
+  background-color: var(--color-coral);
+  color: var(--color-white);
+}
+
+.btn-primary:hover {
+  background-color: #E6492C;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: var(--color-mist);
+  color: var(--color-graphite);
+}
+
+.btn-secondary:hover {
+  background-color: #DDE0E6;
+}
+
+.btn-ghost {
+  background: none;
+  color: var(--color-steel);
+}
+
+.btn-ghost:hover {
+  color: var(--color-graphite);
+}
+
+/* Connected & File Selection */
+.connected-card {
+  background: var(--color-white);
+  border: 1px solid var(--color-mist);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  text-align: center;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: rgba(46, 158, 131, 0.12);
+  color: var(--color-vector);
+  margin-bottom: 1.5rem;
+}
+
+.status-badge.waiting {
+  background-color: rgba(255, 90, 60, 0.12);
+  color: var(--color-coral);
+}
+
+/* Device Glyphs & Connection Trail (The Core Visual Centerpiece, §9) */
+.device-trail-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2.5rem 0;
+  position: relative;
+  width: 100%;
+}
+
+.device-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+/* Simple geometric rounded-rectangle device glyph (§9) */
+.device-glyph {
+  width: 56px;
+  height: 64px;
+  border: 2px solid var(--color-steel);
+  border-radius: 10px;
+  background-color: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: border-color var(--transition-normal);
+}
+
+.device-glyph.active {
+  border-color: var(--color-coral);
+}
+
+.device-glyph.success {
+  border-color: var(--color-vector);
+}
+
+.device-glyph::after {
+  content: '';
+  width: 12px;
+  height: 2px;
+  background-color: var(--color-steel);
+  border-radius: 1px;
+  position: absolute;
+  bottom: 6px;
+}
+
+.device-label {
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-steel);
+}
+
+/* The Signature Trail Line */
+.trail-track {
+  flex: 1;
+  height: 6px;
+  background-color: var(--color-mist);
+  margin: 0 1rem;
+  border-radius: 3px;
+  position: relative;
+  overflow: visible;
+}
+
+.trail-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background-color: var(--color-coral);
+  border-radius: 3px;
+  transition: width 0.15s ease-out, background-color var(--transition-normal);
+}
+
+.trail-fill.success {
+  background-color: var(--color-vector);
+}
+
+.trail-fill.broken {
+  opacity: 0.3;
+  border-style: dashed;
+}
+
+.trail-percentage {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-graphite);
+}
+
+/* Mobile responsive trail: vertical stacking (§8, §9) */
+@media (max-width: 540px) {
+  .device-trail-container {
+    flex-direction: column;
+    height: 220px;
+    margin: 1.5rem 0;
+  }
+
+  .trail-track {
+    width: 6px;
+    height: 100%;
+    margin: 0.75rem 0;
+  }
+
+  .trail-fill {
+    width: 100%;
+    height: 0%;
+  }
+
+  .trail-percentage {
+    top: 50%;
+    left: 20px;
+    transform: translateY(-50%);
+  }
+}
+
+/* Dropzone & File Pickers */
+.dropzone {
+  border: 2px dashed var(--color-mist);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  background-color: var(--color-fog);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+  margin-bottom: 1.5rem;
+}
+
+.dropzone:hover, .dropzone.drag-over {
+  border-color: var(--color-coral);
+  background-color: rgba(255, 90, 60, 0.04);
+}
+
+.dropzone-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--color-steel);
+  margin-bottom: 0.75rem;
+}
+
+.file-preview-card {
+  background-color: var(--color-fog);
+  border: 1px solid var(--color-mist);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  text-align: left;
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--color-graphite);
+  word-break: break-all;
+}
+
+.file-meta {
+  font-size: 0.8rem;
+  color: var(--color-steel);
+}
+
+/* Test message box (for Phase 1 data channel verification) */
+.phase-test-box {
+  background-color: var(--color-fog);
+  border: 1px solid var(--color-mist);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.phase-test-box h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.chat-log {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+  font-family: monospace;
+  background: var(--color-white);
+  border: 1px solid var(--color-mist);
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.5rem;
+}
+
+/* Modal Dialogs (How it works, Privacy, Help) */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(21, 23, 27, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-overlay.open {
+  display: flex;
+}
+
+.modal-card {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  max-width: 520px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 2rem;
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--color-steel);
+  cursor: pointer;
+}
+
+.modal-content p, .modal-content ul {
+  font-size: 0.9rem;
+  color: var(--color-steel);
+  margin-bottom: 1rem;
+}
+
+.modal-content ul {
+  padding-left: 1.25rem;
+}
+
+/* Footer */
+.app-footer {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-mist);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--color-steel);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.footer-links {
+  display: flex;
+  gap: 1rem;
+}
+
+.footer-link {
+  color: var(--color-steel);
+  text-decoration: none;
+}
+
+.footer-link:hover {
+  color: var(--color-graphite);
+}
+
+/* Reduced Motion (§9) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
