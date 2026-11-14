@@ -1,6 +1,7 @@
 /**
  * Slipstream Application Controller
- * Handles UI screen states, user events, and Phase 1 direct peer verification.
+ * Handles UI screen states, user events, Phase 1 direct peer verification,
+ * and subtle CSS visual state transitions (§8, §9).
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -10,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     code: null,
     peer: null,
     qrInstance: null,
+    selectedFile: null,
   };
 
   // DOM Elements
@@ -29,6 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDisconnect = document.getElementById('btn-disconnect');
   const brandLink = document.getElementById('brand-link');
 
+  // Header Elements
+  const headerStatus = document.getElementById('header-status');
+  const headerStatusText = document.getElementById('header-status-text');
+
   // Host Elements
   const hostCodeText = document.getElementById('host-code-text');
   const hostStatusMsg = document.getElementById('host-status-msg');
@@ -39,6 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const joinCodeInput = document.getElementById('join-code-input');
   const joinErrorMsg = document.getElementById('join-error-msg');
   const btnSubmitJoin = document.getElementById('btn-submit-join');
+  const btnScanQr = document.getElementById('btn-scan-qr');
 
   // Connected & Test Elements
   const senderFileSection = document.getElementById('sender-file-section');
@@ -47,6 +54,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSendTestMsg = document.getElementById('btn-send-test-msg');
   const localDeviceLabel = document.getElementById('local-device-label');
   const peerDeviceLabel = document.getElementById('peer-device-label');
+  const connectedDeviceItems = document.querySelectorAll('.device-item');
+
+  // File Dropzone & Preview Elements
+  const fileDropzone = document.getElementById('file-dropzone');
+  const fileInput = document.getElementById('file-input');
+  const filePreview = document.getElementById('file-preview');
+  const previewFilename = document.getElementById('preview-filename');
+  const previewFilesize = document.getElementById('preview-filesize');
+  const btnRemoveFile = document.getElementById('btn-remove-file');
+  const fileActions = document.getElementById('file-actions');
+  const btnSendFile = document.getElementById('btn-send-file');
+  const btnChangeFile = document.getElementById('btn-change-file');
+
+  // Transfer Screen Elements
+  const transferHeading = document.getElementById('transfer-heading');
+  const transferSubtext = document.getElementById('transfer-subtext');
+  const transferTrailFill = document.getElementById('transfer-trail-fill');
+  const transferPercentageText = document.getElementById('transfer-percentage-text');
+  const successCheckmarkBox = document.getElementById('success-checkmark-box');
+  const btnCancelTransfer = document.getElementById('btn-cancel-transfer');
 
   // Modal Handlers
   const modalButtons = document.querySelectorAll('[data-modal]');
@@ -65,6 +92,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function setHeaderConnected(isConnected) {
+    if (!headerStatus) return;
+    if (isConnected) {
+      headerStatus.classList.add('connected');
+      if (headerStatusText) headerStatusText.textContent = 'Connected';
+    } else {
+      headerStatus.classList.remove('connected');
+      if (headerStatusText) headerStatusText.textContent = 'Local Network';
+    }
+  }
+
   function appendChatLog(prefix, message) {
     if (!testChatLog) return;
     const line = document.createElement('div');
@@ -73,10 +111,20 @@ document.addEventListener('DOMContentLoaded', () => {
     testChatLog.scrollTop = testChatLog.scrollHeight;
   }
 
+  function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
   /**
    * Reset application state and clean up resources
    */
   async function resetApp() {
+    setHeaderConnected(false);
+
     if (state.peer) {
       state.peer.close();
       state.peer = null;
@@ -88,12 +136,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     state.role = null;
-    if (qrDisplay) qrDisplay.innerHTML = '';
+    state.selectedFile = null;
+
+    if (qrDisplay) {
+      const scanLine = qrDisplay.querySelector('.qr-scan-line');
+      qrDisplay.innerHTML = '';
+      if (scanLine) qrDisplay.appendChild(scanLine);
+    }
+
     if (joinCodeInput) joinCodeInput.value = '';
     if (joinErrorMsg) joinErrorMsg.style.display = 'none';
     if (testChatLog) testChatLog.innerHTML = 'Data channel ready.';
 
+    // Reset file preview
+    if (fileInput) fileInput.value = '';
+    if (filePreview) filePreview.style.display = 'none';
+    if (fileActions) fileActions.style.display = 'none';
+    if (fileDropzone) fileDropzone.style.display = 'block';
+
+    // Reset trail state
+    setTrailProgress(0, 'active');
+    if (successCheckmarkBox) successCheckmarkBox.style.display = 'none';
+
+    connectedDeviceItems.forEach((el) => el.classList.remove('device-connected'));
+
     showScreen('home');
+  }
+
+  /**
+   * Set trail progress & state (Requirements A, H, I)
+   */
+  function setTrailProgress(percent, status = 'active') {
+    if (!transferTrailFill || !transferPercentageText) return;
+
+    const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+    transferTrailFill.style.width = `${clamped}%`;
+    transferPercentageText.textContent = `${clamped}%`;
+
+    transferTrailFill.classList.remove('success', 'broken');
+
+    if (status === 'success') {
+      transferTrailFill.classList.add('success');
+      if (successCheckmarkBox) successCheckmarkBox.style.display = 'flex';
+      if (transferHeading) transferHeading.textContent = 'Transfer complete';
+      if (transferSubtext) transferSubtext.textContent = 'Verified byte-for-byte with SHA-256 integrity.';
+    } else if (status === 'broken') {
+      transferTrailFill.classList.add('broken');
+      if (transferHeading) transferHeading.textContent = 'Connection lost';
+      if (transferSubtext) transferSubtext.textContent = 'Transfer interrupted. No incomplete file was stored.';
+    }
   }
 
   /**
@@ -118,6 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const joinUrl = currentUrl.toString();
 
       // Render high-contrast black-on-white QR code locally (§9)
+      const scanLine = qrDisplay.querySelector('.qr-scan-line');
       qrDisplay.innerHTML = '';
       if (window.QRCode) {
         new QRCode(qrDisplay, {
@@ -129,6 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
           correctLevel: QRCode.CorrectLevel.M,
         });
       }
+      if (scanLine) qrDisplay.appendChild(scanLine);
 
       // Initialize WebRTC Peer Connection
       state.peer = new SlipstreamPeer({
@@ -138,9 +231,16 @@ document.addEventListener('DOMContentLoaded', () => {
           hostStatusMsg.textContent = status;
         },
         onChannelOpen: () => {
+          setHeaderConnected(true);
           localDeviceLabel.textContent = 'Host (Sender)';
           peerDeviceLabel.textContent = 'Receiver';
           senderFileSection.style.display = 'block';
+
+          // Trigger subtle device glyph lift and settle (Requirement B)
+          connectedDeviceItems.forEach((el) => {
+            el.classList.add('device-connected');
+          });
+
           showScreen('connected');
           appendChatLog('System', 'Direct WebRTC data channel connected!');
         },
@@ -148,6 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
           handleIncomingChannelMessage(data);
         },
         onChannelClose: () => {
+          setHeaderConnected(false);
           appendChatLog('System', 'Data channel closed by peer.');
         },
         onError: (err) => {
@@ -186,14 +287,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       btnSubmitJoin.disabled = true;
-      btnSubmitJoin.textContent = 'Validating code...';
+      btnSubmitJoin.innerHTML = 'Connecting<span class="loading-dots"><span></span><span></span><span></span></span>';
       joinErrorMsg.style.display = 'none';
 
       // Validate code with API
       const session = await Api.getSession(code);
       state.code = session.code;
-
-      btnSubmitJoin.textContent = 'Connecting...';
 
       // Initialize WebRTC Peer Connection as Joiner
       state.peer = new SlipstreamPeer({
@@ -205,9 +304,16 @@ document.addEventListener('DOMContentLoaded', () => {
         onChannelOpen: () => {
           btnSubmitJoin.disabled = false;
           btnSubmitJoin.textContent = 'Connect to device';
+          setHeaderConnected(true);
           localDeviceLabel.textContent = 'Joiner (Receiver)';
           peerDeviceLabel.textContent = 'Sender';
           senderFileSection.style.display = 'none';
+
+          // Trigger subtle device glyph lift and settle (Requirement B)
+          connectedDeviceItems.forEach((el) => {
+            el.classList.add('device-connected');
+          });
+
           showScreen('connected');
           appendChatLog('System', 'Direct WebRTC data channel connected!');
         },
@@ -215,6 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
           handleIncomingChannelMessage(data);
         },
         onChannelClose: () => {
+          setHeaderConnected(false);
           appendChatLog('System', 'Data channel closed by peer.');
         },
         onError: (err) => {
@@ -271,7 +378,100 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Event Listeners
+  /**
+   * Handle File Selection and Drag & Drop (Requirement G)
+   */
+  function handleSelectedFile(file) {
+    if (!file) return;
+    state.selectedFile = file;
+
+    if (previewFilename) previewFilename.textContent = file.name;
+    if (previewFilesize) previewFilesize.textContent = formatFileSize(file.size);
+
+    if (fileDropzone) fileDropzone.style.display = 'none';
+    if (filePreview) filePreview.style.display = 'flex';
+    if (fileActions) fileActions.style.display = 'flex';
+  }
+
+  function clearSelectedFile() {
+    state.selectedFile = null;
+    if (fileInput) fileInput.value = '';
+    if (filePreview) filePreview.style.display = 'none';
+    if (fileActions) fileActions.style.display = 'none';
+    if (fileDropzone) fileDropzone.style.display = 'block';
+  }
+
+  // Dropzone drag-and-drop event listeners with animated border (Requirement G)
+  if (fileDropzone) {
+    fileDropzone.addEventListener('click', () => {
+      if (fileInput) fileInput.click();
+    });
+
+    ['dragenter', 'dragover'].forEach((eventName) => {
+      fileDropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileDropzone.classList.add('drag-over');
+      });
+    });
+
+    ['dragleave', 'dragend'].forEach((eventName) => {
+      fileDropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileDropzone.classList.remove('drag-over');
+      });
+    });
+
+    fileDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileDropzone.classList.remove('drag-over');
+
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleSelectedFile(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleSelectedFile(e.target.files[0]);
+      }
+    });
+  }
+
+  if (btnRemoveFile) {
+    btnRemoveFile.addEventListener('click', clearSelectedFile);
+  }
+
+  if (btnChangeFile) {
+    btnChangeFile.addEventListener('click', () => {
+      if (fileInput) fileInput.click();
+    });
+  }
+
+  if (btnSendFile) {
+    btnSendFile.addEventListener('click', () => {
+      if (!state.selectedFile) {
+        alert('Please choose a file to send.');
+        return;
+      }
+      // Phase 2 file streaming hook: show transfer screen
+      showScreen('transfer');
+      setTrailProgress(0, 'active');
+      if (transferSubtext) transferSubtext.textContent = `Ready to transfer ${state.selectedFile.name} (${formatFileSize(state.selectedFile.size)})`;
+    });
+  }
+
+  if (btnCancelTransfer) {
+    btnCancelTransfer.addEventListener('click', () => {
+      showScreen('connected');
+    });
+  }
+
+  // Navigation Event Listeners
   btnStartSend.addEventListener('click', startHostFlow);
   btnStartReceive.addEventListener('click', startJoinFlow);
   btnCancelHost.addEventListener('click', resetApp);
@@ -283,6 +483,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   joinForm.addEventListener('submit', handleJoinSubmit);
+
+  if (btnScanQr) {
+    btnScanQr.addEventListener('click', () => {
+      alert('Camera access requires HTTPS in browser secure contexts. On local HTTP, please enter the pairing code manually.');
+      if (joinCodeInput) joinCodeInput.focus();
+    });
+  }
 
   btnSendTestMsg.addEventListener('click', sendTestMessage);
   testMessageInput.addEventListener('keydown', (e) => {
