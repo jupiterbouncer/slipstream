@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Slipstream — Nearby Peer-to-Peer File Transfer</title>
   
   <!-- Typography (§9): Space Grotesk & IBM Plex Sans -->
@@ -130,11 +130,11 @@
           <div class="join-container">
             <form id="join-form" class="join-form">
               <label for="join-code-input" class="pairing-code-label">Pairing code</label>
-              <input type="text" id="join-code-input" class="code-input" maxlength="6" placeholder="ABCDEF" autocomplete="off" spellcheck="false" required>
+              <input type="text" id="join-code-input" class="code-input" maxlength="6" placeholder="ABCDEF" inputmode="text" autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false" required>
 
-              <div id="join-error-msg" style="color: var(--color-error); font-size: 0.85rem; display: none;"></div>
+              <div id="join-error-msg" class="join-error-msg" role="alert" style="display: none;"></div>
 
-              <button type="submit" class="btn btn-primary" id="btn-submit-join" style="padding: 11px 32px;">
+              <button type="submit" class="btn btn-primary btn-block" id="btn-submit-join">
                 Connect to device
               </button>
             </form>
@@ -187,14 +187,15 @@
 
           <!-- File Selection Area (Phase 2 Preview & Dropzone) -->
           <div id="sender-file-section" style="margin-top: 1rem; display: none;">
-            <div class="dropzone" id="file-dropzone">
+            <div class="dropzone" id="file-dropzone" role="button" tabindex="0" aria-label="Choose a file or tap to browse">
               <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
-              <p style="font-weight: 600; font-size: 15px; margin-bottom: 2px;">Choose a file or drag & drop</p>
-              <p style="font-size: 13px; color: var(--color-steel);">Any file type (Phase 2 single-file transfer)</p>
+              <p class="dropzone-title">Choose a file or tap to browse</p>
+              <p class="dropzone-subtitle">Tap here or drag & drop (Phase 2 transfer)</p>
+              <span class="btn btn-secondary dropzone-btn" aria-hidden="true">Browse files</span>
               <input type="file" id="file-input" style="display: none;">
             </div>
 
@@ -291,10 +292,10 @@
 
     <!-- Modals (§8) -->
     <!-- How it works modal -->
-    <div class="modal-overlay" id="modal-how">
+    <div class="modal-overlay" id="modal-how" role="dialog" aria-modal="true" aria-labelledby="modal-how-title">
       <div class="modal-card">
-        <button type="button" class="modal-close" data-close-modal>&times;</button>
-        <h2>How Slipstream works</h2>
+        <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
+        <h2 id="modal-how-title">How Slipstream works</h2>
         <div class="modal-content" style="margin-top: 1rem;">
           <p>Slipstream is engineered for direct peer-to-peer file transfer between devices on the same local network without cloud storage:</p>
           <ul>
@@ -308,10 +309,10 @@
     </div>
 
     <!-- Privacy & Security modal -->
-    <div class="modal-overlay" id="modal-privacy">
+    <div class="modal-overlay" id="modal-privacy" role="dialog" aria-modal="true" aria-labelledby="modal-privacy-title">
       <div class="modal-card">
-        <button type="button" class="modal-close" data-close-modal>&times;</button>
-        <h2>Privacy & Security</h2>
+        <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
+        <h2 id="modal-privacy-title">Privacy & Security</h2>
         <div class="modal-content" style="margin-top: 1rem;">
           <p>We believe in transparent, verifiable privacy:</p>
           <ul>
@@ -325,10 +326,10 @@
     </div>
 
     <!-- Help & Diagnostics modal -->
-    <div class="modal-overlay" id="modal-help">
+    <div class="modal-overlay" id="modal-help" role="dialog" aria-modal="true" aria-labelledby="modal-help-title">
       <div class="modal-card">
-        <button type="button" class="modal-close" data-close-modal>&times;</button>
-        <h2>Connection Diagnostics & Help</h2>
+        <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
+        <h2 id="modal-help-title">Connection Diagnostics & Help</h2>
         <div class="modal-content" style="margin-top: 1rem;">
           <p><strong>Troubleshooting WebRTC Connections:</strong></p>
           <ul>

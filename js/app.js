@@ -170,7 +170,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!transferTrailFill || !transferPercentageText) return;
 
     const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+    transferTrailFill.style.setProperty('--trail-progress', `${clamped}%`);
     transferTrailFill.style.width = `${clamped}%`;
+    transferTrailFill.style.height = `${clamped}%`;
     transferPercentageText.textContent = `${clamped}%`;
 
     transferTrailFill.classList.remove('success', 'broken');
@@ -208,14 +210,18 @@ document.addEventListener('DOMContentLoaded', () => {
       currentUrl.searchParams.set('join', session.code);
       const joinUrl = currentUrl.toString();
 
+      // Responsive QR dimension for narrow mobile viewports
+      const qrContainerWidth = qrDisplay.clientWidth || 200;
+      const qrSize = Math.max(160, Math.min(200, qrContainerWidth > 40 ? qrContainerWidth - 28 : 180));
+
       // Render high-contrast black-on-white QR code locally (§9)
       const scanLine = qrDisplay.querySelector('.qr-scan-line');
       qrDisplay.innerHTML = '';
       if (window.QRCode) {
         new QRCode(qrDisplay, {
           text: joinUrl,
-          width: 200,
-          height: 200,
+          width: qrSize,
+          height: qrSize,
           colorDark: '#000000',
           colorLight: '#FFFFFF',
           correctLevel: QRCode.CorrectLevel.M,
@@ -430,6 +436,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         handleSelectedFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileDropzone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (fileInput) fileInput.click();
       }
     });
   }
