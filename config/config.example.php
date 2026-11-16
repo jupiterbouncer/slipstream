@@ -6,11 +6,11 @@
 
 return [
     'db' => [
-        'host' => '127.0.0.1',
+        'host' => 'localhost',
         'port' => 3306,
         'dbname' => 'slipstream',
         'user' => 'root',
-        'pass' => 'mysql', // Default for AMPPS is 'mysql'. For XAMPP it is often empty ''.
+        'pass' => 'demiladesubair', // Default for AMPPS is 'mysql'. For XAMPP it is often empty ''.
         'charset' => 'utf8mb4',
     ],
     'session' => [

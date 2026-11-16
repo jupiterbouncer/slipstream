@@ -40,16 +40,16 @@ The PHP/MySQL server is used only for temporary signaling. It coordinates the co
 
 Slipstream is a single-purpose flow rather than a dashboard.
 
-| Screen | Purpose |
-|---|---|
-| Home | Choose **Send a file** or **Receive a file** |
-| Pairing | Host displays the QR code and short code while waiting |
-| Join a device | Receiver scans the QR code or manually enters the code |
-| Connected / File selection | Sender chooses a file and reviews its details |
-| Incoming-file preview | Receiver accepts or declines the incoming transfer |
-| Transferring | The connection trail between the two device nodes shows transfer progress |
-| Done | Receiver downloads the verified file; sender can send another |
-| Error | A broken/faded trail and clear message explain what went wrong |
+| Screen                     | Purpose                                                                   |
+| -------------------------- | ------------------------------------------------------------------------- |
+| Home                       | Choose **Send a file** or **Receive a file**                  |
+| Pairing                    | Host displays the QR code and short code while waiting                    |
+| Join a device              | Receiver scans the QR code or manually enters the code                    |
+| Connected / File selection | Sender chooses a file and reviews its details                             |
+| Incoming-file preview      | Receiver accepts or declines the incoming transfer                        |
+| Transferring               | The connection trail between the two device nodes shows transfer progress |
+| Done                       | Receiver downloads the verified file; sender can send another             |
+| Error                      | A broken/faded trail and clear message explain what went wrong            |
 
 Supporting features are deliberately secondary:
 
@@ -62,17 +62,17 @@ Supporting features are deliberately secondary:
 
 ## Technology stack
 
-| Layer | Technology |
-|---|---|
-| Structure | HTML5 |
-| Styling | CSS3 |
-| Client logic | Vanilla JavaScript |
-| Direct connection | WebRTC `RTCPeerConnection` and `RTCDataChannel` |
-| Signaling API | PHP REST API |
-| Temporary signaling storage | MySQL |
-| Database access | PDO or MySQLi prepared statements |
-| File handling | Browser File API (`File`, `File.slice()`, `Blob`) |
-| Integrity check | Browser SHA-256 digest, preferably via Web Crypto API |
+| Layer                       | Technology                                              |
+| --------------------------- | ------------------------------------------------------- |
+| Structure                   | HTML5                                                   |
+| Styling                     | CSS3                                                    |
+| Client logic                | Vanilla JavaScript                                      |
+| Direct connection           | WebRTC `RTCPeerConnection` and `RTCDataChannel`     |
+| Signaling API               | PHP REST API                                            |
+| Temporary signaling storage | MySQL                                                   |
+| Database access             | PDO or MySQLi prepared statements                       |
+| File handling               | Browser File API (`File`, `File.slice()`, `Blob`) |
+| Integrity check             | Browser SHA-256 digest, preferably via Web Crypto API   |
 
 The project deliberately avoids Node.js, frontend frameworks, WebSocket servers, cloud file storage and ORM/query-builder dependencies. REST polling is used for signaling at approximately one-second intervals while connection information is pending.
 
@@ -98,17 +98,17 @@ The project deliberately avoids Node.js, frontend frameworks, WebSocket servers,
 
 ### Signaling endpoints
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| `POST` | `/sessions` | Create a temporary pairing session |
-| `GET` | `/sessions/{code}` | Validate a code and expiry |
-| `POST` | `/sessions/{code}/offer` | Submit the host's SDP offer |
-| `GET` | `/sessions/{code}/offer` | Poll for the offer |
-| `POST` | `/sessions/{code}/answer` | Submit the joiner's SDP answer |
-| `GET` | `/sessions/{code}/answer` | Poll for the answer |
-| `POST` | `/sessions/{code}/ice-candidates` | Submit an ICE candidate with the sender's role |
-| `GET` | `/sessions/{code}/ice-candidates?role=host\|joiner` | Retrieve candidates from the specified role |
-| `DELETE` | `/sessions/{code}` | Delete temporary signaling data |
+| Method     | Endpoint                                             | Purpose                                        |
+| ---------- | ---------------------------------------------------- | ---------------------------------------------- |
+| `POST`   | `/sessions`                                        | Create a temporary pairing session             |
+| `GET`    | `/sessions/{code}`                                 | Validate a code and expiry                     |
+| `POST`   | `/sessions/{code}/offer`                           | Submit the host's SDP offer                    |
+| `GET`    | `/sessions/{code}/offer`                           | Poll for the offer                             |
+| `POST`   | `/sessions/{code}/answer`                          | Submit the joiner's SDP answer                 |
+| `GET`    | `/sessions/{code}/answer`                          | Poll for the answer                            |
+| `POST`   | `/sessions/{code}/ice-candidates`                  | Submit an ICE candidate with the sender's role |
+| `GET`    | `/sessions/{code}/ice-candidates?role=host\|joiner` | Retrieve candidates from the specified role    |
+| `DELETE` | `/sessions/{code}`                                 | Delete temporary signaling data                |
 
 For the ICE `GET`, `role` identifies whose candidates are being retrieved. The host retrieves `role=joiner`; the joiner retrieves `role=host`.
 
@@ -162,14 +162,14 @@ The visual identity is built around one idea: **the connection between the devic
 
 ### Colors
 
-| Token | Hex | Use |
-|---|---|---|
-| Fog | `#F4F5F7` | Main background |
-| Graphite | `#15171B` | Primary text |
+| Token      | Hex         | Use                                                     |
+| ---------- | ----------- | ------------------------------------------------------- |
+| Fog        | `#F4F5F7` | Main background                                         |
+| Graphite   | `#15171B` | Primary text                                            |
 | Slip Coral | `#FF5A3C` | Active trail, primary actions and active connection cue |
-| Vector | `#2E9E83` | Connected/success state |
-| Steel | `#5B6472` | Device glyphs and secondary UI |
-| Mist | `#E7E9ED` | Panels and unfilled trail |
+| Vector     | `#2E9E83` | Connected/success state                                 |
+| Steel      | `#5B6472` | Device glyphs and secondary UI                          |
+| Mist       | `#E7E9ED` | Panels and unfilled trail                               |
 
 ### Typography and visual rules
 
@@ -235,25 +235,28 @@ slipstream/
 ### Quickstart Setup
 
 1. **Import the database schema:**
+
    ```bash
    mysql -u root -p < database/schema.sql
    ```
-   *(On AMPPS on Windows, the default MySQL user is `root` and default password is `mysql`)*.
 
+   *(On AMPPS on Windows, the default MySQL user is `root` and default password is `mysql`)*.
 2. **Configure database credentials:**
    Copy `config/config.example.php` to `config/config.local.php` if your local MySQL settings differ from default:
+
    ```bash
    cp config/config.example.php config/config.local.php
    ```
-
 3. **Start the local development server:**
    Using PHP's built-in web server:
+
    ```bash
    php -S 0.0.0.0:8000 router.php
    ```
-   Or place this directory inside your web server document root (e.g., AMPPS `www` or XAMPP `htdocs`).
 
+   Or place this directory inside your web server document root (e.g., AMPPS `www` or XAMPP `htdocs`).
 4. **Test Phase 1 Signaling & Direct Peer Connection:**
+
    - Open `http://localhost:8000` on Device 1 (or host machine).
    - Click **Send a file**. A pairing code and QR code are generated.
    - On Device 2 (or second browser window on same network), open `http://<HOST-IP>:8000` and click **Receive a file**.
@@ -262,11 +265,11 @@ slipstream/
 
 ## Testing checklist
 
-- [x] Create a session and receive a valid short code and expiry.
-- [x] QR code contains the correct join URL and is generated purely client-side.
-- [x] Manual code entry works when camera access is unavailable.
-- [x] Invalid and expired codes are rejected with structured JSON errors.
-- [x] Offer, answer and ICE candidates are exchanged through the REST API.
+- [X] Create a session and receive a valid short code and expiry.
+- [X] QR code contains the correct join URL and is generated purely client-side.
+- [X] Manual code entry works when camera access is unavailable.
+- [X] Invalid and expired codes are rejected with structured JSON errors.
+- [X] Offer, answer and ICE candidates are exchanged through the REST API.
 - [ ] Direct data channel open verified between two separate physical devices on LAN.
 - [ ] Receiver can accept or decline an incoming file (Phase 2).
 - [ ] Small and larger test files transfer successfully (Phase 2).
@@ -274,9 +277,9 @@ slipstream/
 - [ ] Sender and receiver progress reflect actual bytes transferred (Phase 2).
 - [ ] Cancel stops the transfer and clears incomplete data (Phase 3).
 - [ ] A dropped connection produces an explicit error state, never false success (Phase 3).
-- [x] Expired and completed signaling records are cleaned up lazily.
-- [x] SQL uses prepared statements and pairing-code validation is rate-limited.
-- [x] Layout and primary actions work on desktop and mobile widths.
+- [X] Expired and completed signaling records are cleaned up lazily.
+- [X] SQL uses prepared statements and pairing-code validation is rate-limited.
+- [X] Layout and primary actions work on desktop and mobile widths.
 - [ ] QR scanning, permissions and secure-context guidance tested on a phone.
 
 ## Limitations
