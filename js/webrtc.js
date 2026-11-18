@@ -1,16 +1,28 @@
-/**
+﻿/**
  * Slipstream WebRTC Connection Manager
  * Manages RTCPeerConnection, signaling exchange, and RTCDataChannel (§4, §5, §10, §12).
  * Direct peer-to-peer data transport; zero byte routing through server.
  */
 
 class SlipstreamPeer {
-  constructor({ role, code, onStatusChange, onChannelOpen, onChannelMessage, onChannelClose, onError }) {
+  constructor({
+    role,
+    code,
+    onStatusChange,
+    onChannelOpen,
+    onChannelMessage,
+    onControlMessage,
+    onBinaryMessage,
+    onChannelClose,
+    onError,
+  }) {
     this.role = role; // 'host' | 'joiner'
     this.code = code;
     this.onStatusChange = onStatusChange || (() => {});
     this.onChannelOpen = onChannelOpen || (() => {});
     this.onChannelMessage = onChannelMessage || (() => {});
+    this.onControlMessage = onControlMessage || (() => {});
+    this.onBinaryMessage = onBinaryMessage || (() => {});
     this.onChannelClose = onChannelClose || (() => {});
     this.onError = onError || (() => {});
 
@@ -20,6 +32,7 @@ class SlipstreamPeer {
     this.isClosed = false;
     this.processedCandidates = new Set();
     this.candidateCursor = 0;
+    this.blobQueue = Promise.resolve();
 
     // Standard STUN configuration for local candidate discovery
     this.rtcConfig = {
@@ -215,7 +228,7 @@ class SlipstreamPeer {
     };
 
     channel.onmessage = (event) => {
-      this.onChannelMessage(event.data);
+      this.handleIncomingData(event.data);
     };
 
     channel.onclose = () => {
@@ -230,13 +243,142 @@ class SlipstreamPeer {
   }
 
   /**
-   * Send data through the data channel.
+   * Distinguish incoming string control messages from binary chunks and route them (§2.1, §7.1).
+   */
+  handleIncomingData(data) {
+    if (this.isClosed) return;
+
+    // 1. Text control message
+    if (typeof data === 'string') {
+      try {
+        const parsed = JSON.parse(data);
+        // Verify common Phase 2 control message envelope (§2.2)
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          parsed.protocol === 'slipstream' &&
+          parsed.version === 1 &&
+          typeof parsed.type === 'string' &&
+          typeof parsed.transferId === 'string'
+        ) {
+          this.onControlMessage(parsed);
+          return;
+        }
+
+        // Legacy Phase 1 test-chat message fallback ({ type: "text", message: "..." })
+        this.onChannelMessage(data);
+      } catch {
+        // Plain non-JSON string fallback
+        this.onChannelMessage(data);
+      }
+      return;
+    }
+
+    // 2. Binary message (ArrayBuffer)
+    if (data instanceof ArrayBuffer) {
+      this.onBinaryMessage(data);
+      return;
+    }
+
+    // 3. Binary message delivered as Blob (browser fallback)
+    if (typeof Blob !== 'undefined' && data instanceof Blob) {
+      // Serialize conversions through a promise queue to preserve arrival order (§7.1)
+      this.blobQueue = this.blobQueue
+        .then(() => data.arrayBuffer())
+        .then((buffer) => {
+          if (!this.isClosed) {
+            this.onBinaryMessage(buffer);
+          }
+        })
+        .catch((err) => {
+          console.error('Blob to ArrayBuffer conversion failed:', err);
+          this.onError(err);
+        });
+      return;
+    }
+
+    // 4. TypedArray / ArrayBufferView
+    if (ArrayBuffer.isView(data)) {
+      this.onBinaryMessage(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+      return;
+    }
+
+    console.warn('Unhandled data type received on RTCDataChannel:', typeof data);
+  }
+
+  /**
+   * Send a Phase 2 control message with envelope validation (§2.2, §7.1).
+   * @param {Object} message - Control message object with protocol envelope.
+   */
+  sendControl(message) {
+    if (!this.isChannelOpen()) {
+      throw new Error('Data channel is not open for control transmission');
+    }
+    if (!message || typeof message !== 'object') {
+      throw new Error('Control message must be a valid object');
+    }
+    if (
+      message.protocol !== 'slipstream' ||
+      message.version !== 1 ||
+      typeof message.type !== 'string' ||
+      typeof message.transferId !== 'string'
+    ) {
+      throw new Error('Invalid Phase 2 control message envelope (requires protocol="slipstream", version=1, type, and transferId)');
+    }
+    this.dataChannel.send(JSON.stringify(message));
+  }
+
+  /**
+   * Send a raw binary chunk (ArrayBuffer) through the data channel (§2.1, §3.2, §7.1).
+   * @param {ArrayBuffer|ArrayBufferView} buffer - Raw chunk bytes.
+   */
+  sendBinary(buffer) {
+    if (!this.isChannelOpen()) {
+      throw new Error('Data channel is not open for binary transmission');
+    }
+    if (!(buffer instanceof ArrayBuffer) && !ArrayBuffer.isView(buffer)) {
+      throw new Error('Binary payload must be an ArrayBuffer or ArrayBufferView');
+    }
+    this.dataChannel.send(buffer);
+  }
+
+  /**
+   * Send raw data (preserved for Phase 1 text-chat compatibility).
+   * @param {string|ArrayBuffer} data
    */
   send(data) {
-    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
+    if (!this.isChannelOpen()) {
       throw new Error('Data channel is not open');
     }
     this.dataChannel.send(data);
+  }
+
+  /**
+   * Check whether data channel is open and ready.
+   * @returns {boolean}
+   */
+  isChannelOpen() {
+    return !!(this.dataChannel && this.dataChannel.readyState === 'open');
+  }
+
+  /**
+   * Current queued buffer size in bytes (for back-pressure monitoring, §6).
+   */
+  get bufferedAmount() {
+    return this.dataChannel ? this.dataChannel.bufferedAmount : 0;
+  }
+
+  /**
+   * Set low threshold in bytes for bufferedamountlow event (§6).
+   */
+  set bufferedAmountLowThreshold(value) {
+    if (this.dataChannel) {
+      this.dataChannel.bufferedAmountLowThreshold = value;
+    }
+  }
+
+  get bufferedAmountLowThreshold() {
+    return this.dataChannel ? this.dataChannel.bufferedAmountLowThreshold : 0;
   }
 
   stopPolling() {
@@ -252,9 +394,14 @@ class SlipstreamPeer {
   close() {
     this.isClosed = true;
     this.stopPolling();
+    this.blobQueue = Promise.resolve();
 
     if (this.dataChannel) {
       try {
+        this.dataChannel.onopen = null;
+        this.dataChannel.onmessage = null;
+        this.dataChannel.onclose = null;
+        this.dataChannel.onerror = null;
         this.dataChannel.close();
       } catch {}
       this.dataChannel = null;
