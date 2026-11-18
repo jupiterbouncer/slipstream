@@ -1,0 +1,17 @@
+**
+!Dockerfile
+!deploy/apache.conf
+!api/db.php
+!api/sessions.php
+!config/config.php
+!database/schema.sql
+!database/init.php
+!index.html
+!slipstream-favicon.svg
+!css/style.css
+!js/api.js
+!js/app.js
+!js/webrtc.js
+!js/file-sender.js
+!js/file-receiver.js
+!js/vendor/qrcode.min.js
