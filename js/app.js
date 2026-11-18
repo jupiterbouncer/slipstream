@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
     sender: null,            // SlipstreamFileSender instance
     receiver: null,          // SlipstreamFileReceiver instance
     transferState: 'idle',   // 'idle' | 'hashing' | 'offering' | 'awaiting-decision' | 'transferring' | 'verifying' | 'completed' | 'rejected' | 'cancelled' | 'failed'
-    transferId: null,        // Active UUID v4
     pendingOffer: null,      // Stored offer metadata on receiver
     downloadUrl: null,       // Blob URL for verified download
     downloadBlob: null,      // Assembled and verified Blob
@@ -198,7 +197,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     state.downloadBlob = null;
     state.pendingOffer = null;
-    state.transferId = null;
     state.transferState = 'idle';
     state.stats = {
       bytesTransferred: 0,
@@ -270,10 +268,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function setTrailProgress(percent, status = 'active') {
     if (!transferTrailFill || !transferPercentageText) return;
 
-    const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+    const clamped = Math.max(0, Math.min(100, Math.floor(percent)));
     transferTrailFill.style.setProperty('--trail-progress', `${clamped}%`);
-    transferTrailFill.style.width = `${clamped}%`;
-    transferTrailFill.style.height = `${clamped}%`;
     transferPercentageText.textContent = `${clamped}%`;
 
     transferTrailFill.classList.remove('success', 'broken');
@@ -285,8 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (transferSubtext) transferSubtext.textContent = 'Verified byte-for-byte with SHA-256 integrity.';
     } else if (status === 'broken') {
       transferTrailFill.classList.add('broken');
-      if (transferHeading) transferHeading.textContent = 'Connection lost';
-      if (transferSubtext) transferSubtext.textContent = 'Transfer interrupted. No incomplete file was stored.';
     }
   }
 
@@ -352,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'hashing':
         if (transferStateText) transferStateText.textContent = 'Preparing';
         if (transferHeading) transferHeading.textContent = 'Preparing file...';
-        if (transferSubtext) transferSubtext.textContent = `Computing SHA-256 for ${details.name || 'selected file'}...`;
+        if (transferSubtext) transferSubtext.textContent = `Computing SHA-256 for ${details.name || state.selectedFile?.name || 'selected file'}...`;
         if (transferNodeSender) transferNodeSender.classList.add('active');
         setTrailProgress(0, 'active');
         break;
@@ -366,6 +360,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setTrailProgress(0, 'active');
         break;
 
+      case 'ready':
+        if (transferStateText) transferStateText.textContent = 'Accepted';
+        setTrailProgress(0, 'active');
+        break;
       case 'transferring':
       case 'sending':
       case 'receiving':
@@ -377,13 +375,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (transferNodeReceiver) transferNodeReceiver.classList.add('receiving');
         break;
 
+      case 'awaiting-verification':
+        if (transferStateText) transferStateText.textContent = 'Awaiting verification';
+        if (transferHeading) transferHeading.textContent = 'Waiting for receiver verification…';
+        if (transferSubtext) transferSubtext.textContent = 'All chunks have been queued.';
+        break;
       case 'verifying':
         if (transferStateText) transferStateText.textContent = 'Verifying';
         if (transferHeading) transferHeading.textContent = 'Verifying integrity...';
         if (transferSubtext) transferSubtext.textContent = 'Calculating and validating SHA-256 digest...';
         if (transferNodeSender) transferNodeSender.classList.add('active');
         if (transferNodeReceiver) transferNodeReceiver.classList.add('active');
-        setTrailProgress(100, 'active');
+        // Verification keeps the last receiver-confirmed progress.
         break;
 
       case 'completed':
@@ -505,8 +508,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <polyline points="7 10 12 15 17 10"></polyline>
         <line x1="12" y1="15" x2="12" y2="3"></line>
       </svg>
-      Download ${filename}
+      Download
     `;
+    dlBtn.append(document.createTextNode(' ' + filename));
     dlBtn.style.textDecoration = 'none';
     dlBtn.style.display = 'inline-flex';
     dlBtn.style.alignItems = 'center';
@@ -597,7 +601,8 @@ document.addEventListener('DOMContentLoaded', () => {
         onError: (err) => {
           console.error('Host connection error:', err);
           hostStatusMsg.textContent = `Error: ${err.message}`;
-          handleTransferError(err);
+          if (state.sender || state.receiver) handleChannelClose();
+          else handleTransferError(err);
         },
       });
 
@@ -685,7 +690,8 @@ document.addEventListener('DOMContentLoaded', () => {
           btnSubmitJoin.textContent = 'Connect to device';
           joinErrorMsg.textContent = `Connection error: ${err.message}`;
           joinErrorMsg.style.display = 'block';
-          handleTransferError(err);
+          if (state.sender || state.receiver) handleChannelClose();
+          else handleTransferError(err);
         },
       });
 
@@ -706,112 +712,38 @@ document.addEventListener('DOMContentLoaded', () => {
    * Instantiate role-specific transfer engines when data channel opens.
    */
   function initializeTransferEngines() {
-    if (!state.peer) return;
-
+    const callbacks = {
+      peer: state.peer, onProgress: handleTransferProgress, onError: handleTransferError,
+      onStateChange(next, details) {
+        // Completion and failure callbacks carry the verified Blob or error.
+        if (['completed', 'failed', 'awaiting-decision', 'ready'].includes(next)) return;
+        showScreen('transfer');
+        updateTransferUIState(next, details);
+      },
+    };
     if (state.role === 'host') {
-      const SenderClass = typeof SlipstreamFileSender !== 'undefined'
-        ? SlipstreamFileSender
-        : (typeof FileSender !== 'undefined' ? FileSender : null);
-
-      if (SenderClass) {
-        state.sender = new SenderClass({
-          peer: state.peer,
-          channel: state.peer.dataChannel,
-          onStateChange: (senderState) => handleSenderStateChange(senderState),
-          onProgress: (progress) => handleTransferProgress(progress),
-          onComplete: (details) => handleSenderComplete(details),
-          onError: (err) => handleTransferError(err),
-        });
-        console.log('[Phase 2] File sender initialized for host.');
-      } else {
-        console.info('[Phase 2] SlipstreamFileSender not yet loaded; ready for Person 2 module.');
-      }
-    } else if (state.role === 'joiner') {
-      const ReceiverClass = typeof SlipstreamFileReceiver !== 'undefined'
-        ? SlipstreamFileReceiver
-        : (typeof FileReceiver !== 'undefined' ? FileReceiver : null);
-
-      if (ReceiverClass) {
-        state.receiver = new ReceiverClass({
-          peer: state.peer,
-          channel: state.peer.dataChannel,
-          onOffer: (offer) => handleIncomingOffer(offer),
-          onStateChange: (receiverState) => handleReceiverStateChange(receiverState),
-          onProgress: (progress) => handleTransferProgress(progress),
-          onComplete: (result) => handleReceiverComplete(result),
-          onError: (err) => handleTransferError(err),
-        });
-        console.log('[Phase 2] File receiver initialized for joiner.');
-      } else {
-        console.info('[Phase 2] SlipstreamFileReceiver not yet loaded; ready for Person 3 module.');
-      }
-    }
-  }
-
-  /**
-   * Route incoming Phase 2 control messages with protocol envelope (§2.2, §7.4).
-   */
-  function handleIncomingControlMessage(message) {
-    if (!message || typeof message !== 'object') return;
-    console.log(`[Phase 2 Control] Type: ${message.type}, Transfer: ${message.transferId}`);
-
-    state.transferId = message.transferId;
-
-    if (state.role === 'host' && state.sender) {
-      if (typeof state.sender.handleControlMessage === 'function') {
-        state.sender.handleControlMessage(message);
-      }
-      return;
-    }
-
-    if (state.role === 'joiner') {
-      if (message.type === 'file-offer' && message.file) {
-        handleIncomingOffer(message.file);
-      }
-      if (state.receiver && typeof state.receiver.handleControlMessage === 'function') {
-        state.receiver.handleControlMessage(message);
-      }
-      return;
-    }
-
-    console.warn('[Phase 2] Control message received with no active engine handler:', message.type);
-  }
-
-  /**
-   * Route incoming raw binary chunk to the receiver engine (§2.1, §3.2, §7.4).
-   */
-  function handleIncomingBinaryMessage(buffer) {
-    if (state.role === 'joiner') {
-      if (state.receiver && typeof state.receiver.handleBinaryChunk === 'function') {
-        state.receiver.handleBinaryChunk(buffer);
-      } else {
-        console.warn('[Phase 2] Binary chunk received but receiver engine is not loaded.');
-      }
+      state.sender = new SlipstreamFileSender({ ...callbacks, onComplete: handleSenderComplete });
     } else {
-      // Host should never treat inbound binary data as a file transfer (§7.4)
-      console.warn('[Phase 2] Unexpected binary chunk received on host role; ignoring (§7.4)');
+      state.receiver = new SlipstreamFileReceiver({ ...callbacks, onOffer: handleIncomingOffer, onComplete: handleReceiverComplete });
     }
   }
 
-  /**
-   * Handle WebRTC data channel close (§8).
-   */
+  function handleIncomingControlMessage(message) {
+    (state.sender || state.receiver)?.handleControlMessage(message);
+  }
+
+  function handleIncomingBinaryMessage(buffer) {
+    state.receiver?.handleBinaryChunk(buffer);
+  }
+
   function handleChannelClose() {
     setHeaderConnected(false);
     appendChatLog('System', 'Data channel closed by peer.');
-
-    if (state.transferState !== 'idle' && state.transferState !== 'completed') {
-      handleTransferError(new Error('Connection dropped by peer during transfer.'));
-    }
-
-    if (state.sender) {
-      try { state.sender.destroy(); } catch {}
-      state.sender = null;
-    }
-    if (state.receiver) {
-      try { state.receiver.destroy(); } catch {}
-      state.receiver = null;
-    }
+    const engine = state.sender || state.receiver;
+    engine?.channelClosed();
+    engine?.destroy();
+    state.sender = null;
+    state.receiver = null;
   }
 
   /**
@@ -824,32 +756,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 100 MiB initial guardrail (§3.3)
-    const MAX_FILE_SIZE = 100 * 1024 * 1024;
-    if (state.selectedFile.size > MAX_FILE_SIZE) {
+    if (state.selectedFile.size > TransferProtocol.maxFileSize) {
       alert(`File exceeds the 100 MB limit (${formatFileSize(state.selectedFile.size)}). Please choose a smaller file.`);
       return;
     }
 
-    if (!state.sender) {
-      initializeTransferEngines();
+    if (!state.sender || !state.peer?.isChannelOpen()) {
+      handleTransferError(new Error('Reconnect before sending a file.'));
+      return;
     }
 
     updateActiveFileBadge(state.selectedFile);
     showScreen('transfer');
-    updateTransferUIState('hashing', { name: state.selectedFile.name });
 
     state.stats.startTime = 0;
     state.stats.lastProgressTime = 0;
     state.stats.lastBytes = 0;
     state.stats.speedBps = 0;
+    state.stats.bytesTransferred = 0;
+    state.stats.totalBytes = state.selectedFile.size;
 
     try {
-      if (state.sender) {
-        await state.sender.start(state.selectedFile);
-      } else {
-        // Fallback for standalone UI verification: simulate offering state
-        updateTransferUIState('offering');
-      }
+      await state.sender.start(state.selectedFile);
     } catch (err) {
       console.error('Failed to start file transfer:', err);
       handleTransferError(err);
@@ -860,6 +788,13 @@ document.addEventListener('DOMContentLoaded', () => {
    * Handle incoming file offer on the joiner/receiver (§4.1, §7.4).
    */
   function handleIncomingOffer(offer) {
+    state.stats.bytesTransferred = 0;
+    state.stats.totalBytes = offer.size;
+    if (state.downloadUrl) URL.revokeObjectURL(state.downloadUrl);
+    state.downloadUrl = null;
+    state.downloadBlob = null;
+    updateTransferUIState('idle');
+    showScreen('connected');
     state.pendingOffer = offer;
     state.transferState = 'awaiting-decision';
 
@@ -956,7 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       updateActiveFileBadge(state.pendingOffer);
       showScreen('transfer');
-      updateTransferUIState('transferring');
+      updateTransferUIState('ready');
       if (transferHeading) transferHeading.textContent = 'Receiving file...';
       if (transferSubtext) {
         const name = state.pendingOffer ? state.pendingOffer.name : 'file';
@@ -981,21 +916,8 @@ document.addEventListener('DOMContentLoaded', () => {
    * User declines incoming offer (§4.3).
    */
   function declineIncomingTransfer() {
-    if (state.receiver && typeof state.receiver.reject === 'function') {
-      state.receiver.reject('user-declined');
-    }
+    state.receiver?.reject('user-declined');
     state.pendingOffer = null;
-    state.transferState = 'idle';
-
-    if (incomingSection) {
-      incomingSection.style.display = 'none';
-    }
-    if (receiverWaitingBox) {
-      receiverWaitingBox.style.display = 'flex';
-      if (receiverStatusMsg) {
-        receiverStatusMsg.textContent = 'Offer declined. Waiting for sender to select a file...';
-      }
-    }
   }
 
   /**
@@ -1035,7 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
       speedEtaStr = `· ${speedStr} · ${remainingSecs}s remaining`;
     }
 
-    if (transferHeading) {
+    if (transferHeading && state.transferState !== 'awaiting-verification') {
       transferHeading.textContent = state.role === 'host' ? 'Sending file...' : 'Receiving file...';
     }
     if (transferSubtext) {
@@ -1044,20 +966,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (transferSpeedEta) {
       transferSpeedEta.textContent = speedEtaStr;
     }
-  }
-
-  /**
-   * Handle sender state transitions (§5.1).
-   */
-  function handleSenderStateChange(senderState) {
-    updateTransferUIState(senderState);
-  }
-
-  /**
-   * Handle receiver state transitions (§5.2).
-   */
-  function handleReceiverStateChange(receiverState) {
-    updateTransferUIState(receiverState);
   }
 
   /**
@@ -1079,6 +987,7 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function handleTransferError(err) {
     console.error('Transfer error:', err);
+    showScreen('transfer');
     updateTransferUIState('failed', err);
   }
 
@@ -1086,12 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
    * Cancel active transfer on either side (§4.8).
    */
   function cancelActiveTransfer() {
-    if (state.role === 'host' && state.sender && typeof state.sender.cancel === 'function') {
-      state.sender.cancel('user-cancelled');
-    } else if (state.role === 'joiner' && state.receiver && typeof state.receiver.cancel === 'function') {
-      state.receiver.cancel('user-cancelled');
-    }
-    updateTransferUIState('cancelled');
+    (state.sender || state.receiver)?.cancel();
   }
 
   /**
@@ -1242,8 +1146,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btnRetryTransfer.addEventListener('click', () => {
       showScreen('connected');
       updateTransferUIState('idle');
-      if (state.role === 'host') {
-        clearSelectedFile();
+      if (state.role === 'host') clearSelectedFile();
+      else {
+        incomingSection.style.display = 'none';
+        receiverWaitingBox.style.display = 'flex';
       }
     });
   }

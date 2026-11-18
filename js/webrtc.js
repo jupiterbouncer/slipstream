@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Slipstream WebRTC Connection Manager
  * Manages RTCPeerConnection, signaling exchange, and RTCDataChannel (§4, §5, §10, §12).
  * Direct peer-to-peer data transport; zero byte routing through server.
@@ -32,7 +32,7 @@ class SlipstreamPeer {
     this.isClosed = false;
     this.processedCandidates = new Set();
     this.candidateCursor = 0;
-    this.blobQueue = Promise.resolve();
+    this.receiveQueue = Promise.resolve();
 
     // Standard STUN configuration for local candidate discovery
     this.rtcConfig = {
@@ -228,7 +228,8 @@ class SlipstreamPeer {
     };
 
     channel.onmessage = (event) => {
-      this.handleIncomingData(event.data);
+      this.receiveQueue = this.receiveQueue.then(() => this.handleIncomingData(event.data))
+        .catch(error => this.onError(error));
     };
 
     channel.onclose = () => {
@@ -245,65 +246,19 @@ class SlipstreamPeer {
   /**
    * Distinguish incoming string control messages from binary chunks and route them (§2.1, §7.1).
    */
-  handleIncomingData(data) {
+  async handleIncomingData(data) {
     if (this.isClosed) return;
-
-    // 1. Text control message
     if (typeof data === 'string') {
-      try {
-        const parsed = JSON.parse(data);
-        // Verify common Phase 2 control message envelope (§2.2)
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          parsed.protocol === 'slipstream' &&
-          parsed.version === 1 &&
-          typeof parsed.type === 'string' &&
-          typeof parsed.transferId === 'string'
-        ) {
-          this.onControlMessage(parsed);
-          return;
-        }
-
-        // Legacy Phase 1 test-chat message fallback ({ type: "text", message: "..." })
-        this.onChannelMessage(data);
-      } catch {
-        // Plain non-JSON string fallback
+      let message;
+      try { message = JSON.parse(data); } catch { return; }
+      if (message?.protocol === 'slipstream') this.onControlMessage(message);
+      else if (message?.protocol === undefined && message?.type === 'text' && typeof message.message === 'string') {
         this.onChannelMessage(data);
       }
       return;
     }
-
-    // 2. Binary message (ArrayBuffer)
-    if (data instanceof ArrayBuffer) {
-      this.onBinaryMessage(data);
-      return;
-    }
-
-    // 3. Binary message delivered as Blob (browser fallback)
-    if (typeof Blob !== 'undefined' && data instanceof Blob) {
-      // Serialize conversions through a promise queue to preserve arrival order (§7.1)
-      this.blobQueue = this.blobQueue
-        .then(() => data.arrayBuffer())
-        .then((buffer) => {
-          if (!this.isClosed) {
-            this.onBinaryMessage(buffer);
-          }
-        })
-        .catch((err) => {
-          console.error('Blob to ArrayBuffer conversion failed:', err);
-          this.onError(err);
-        });
-      return;
-    }
-
-    // 4. TypedArray / ArrayBufferView
-    if (ArrayBuffer.isView(data)) {
-      this.onBinaryMessage(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
-      return;
-    }
-
-    console.warn('Unhandled data type received on RTCDataChannel:', typeof data);
+    if (data instanceof Blob) data = await data.arrayBuffer();
+    if (!this.isClosed && data instanceof ArrayBuffer) this.onBinaryMessage(data);
   }
 
   /**
@@ -394,7 +349,7 @@ class SlipstreamPeer {
   close() {
     this.isClosed = true;
     this.stopPolling();
-    this.blobQueue = Promise.resolve();
+    this.receiveQueue = Promise.resolve();
 
     if (this.dataChannel) {
       try {
