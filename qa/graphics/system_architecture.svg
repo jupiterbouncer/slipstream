@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 680" width="1000" height="680" style="background:#F4F5F7; font-family:'IBM Plex Sans', -apple-system, sans-serif;">
+  <defs>
+    <!-- Drop Shadow Filter -->
+    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#15171B" flood-opacity="0.06"/>
+    </filter>
+    <!-- Arrow Markers -->
+    <marker id="arrow-coral" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#FF5A3C"/>
+    </marker>
+    <marker id="arrow-vector" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#2E9E83"/>
+    </marker>
+    <marker id="arrow-steel" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#5B6472"/>
+    </marker>
+  </defs>
+
+  <!-- Title & Header -->
+  <g transform="translate(40, 40)">
+    <!-- Slipstream Logo Icon -->
+    <rect width="32" height="32" rx="8" fill="#FF5A3C"/>
+    <path d="M10 21 L19 11 M19 11 L13 11 M19 11 L19 17" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <text x="44" y="23" font-family="'Space Grotesk', sans-serif" font-weight="700" font-size="22" fill="#15171B">Slipstream</text>
+    <text x="175" y="23" font-size="14" font-weight="500" fill="#5B6472">System Architecture &amp; Direct Transport Model (Phase 2)</text>
+  </g>
+
+  <!-- Top Container: Ephemeral Signaling Backend (PHP / MySQL) -->
+  <g transform="translate(320, 95)" filter="url(#card-shadow)">
+    <rect width="360" height="135" rx="14" fill="#FFFFFF" stroke="#E7E9ED" stroke-width="1.5"/>
+    <!-- Header -->
+    <rect width="360" height="38" rx="14" fill="#FAFAFB"/>
+    <rect y="24" width="360" height="14" fill="#FAFAFB"/>
+    <circle cx="24" cy="19" r="5" fill="#5B6472"/>
+    <text x="38" y="23" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="13" fill="#15171B">Lightweight Signaling Plane (HTTP / REST)</text>
+
+    <!-- Details -->
+    <text x="20" y="60" font-size="12" font-weight="600" fill="#5B6472">Backend Stack: <tspan fill="#15171B">PHP 8.2 &bull; MySQL &bull; PDO Prepared Statements</tspan></text>
+    <text x="20" y="80" font-size="11.5" fill="#5B6472">&bull; Ephemeral 6-char pairing session creation &amp; QR routing</text>
+    <text x="20" y="98" font-size="11.5" fill="#5B6472">&bull; SDP Offer/Answer relay &amp; ICE Candidate polling</text>
+    
+    <!-- Zero File Bytes Badge -->
+    <rect x="20" y="106" width="320" height="20" rx="4" fill="#FDE8E6"/>
+    <text x="35" y="120" font-size="10.5" font-weight="600" fill="#D93829">&bull; ZERO FILE BYTES TOUCH THIS SERVER OR DATABASE</text>
+  </g>
+
+  <!-- Host Device (Browser A - Sender) -->
+  <g transform="translate(50, 275)" filter="url(#card-shadow)">
+    <rect width="380" height="340" rx="16" fill="#FFFFFF" stroke="#E7E9ED" stroke-width="1.5"/>
+    <!-- Card Header -->
+    <rect width="380" height="48" rx="16" fill="#15171B"/>
+    <rect y="32" width="380" height="16" fill="#15171B"/>
+    <!-- Laptop Icon -->
+    <svg x="18" y="14" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="4" width="16" height="11" rx="1.5"></rect><path d="M7 20h6M10 15v5"></path>
+    </svg>
+    <text x="48" y="29" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="15" fill="#FFFFFF">Sender / Host (Alex's Laptop)</text>
+    <rect x="290" y="12" width="75" height="24" rx="12" fill="#FF5A3C"/>
+    <text x="306" y="28" font-size="11" font-weight="700" fill="#FFFFFF">SENDER</text>
+
+    <!-- Sub-components inside Sender -->
+    <!-- 1. File Selection & Slicing -->
+    <g transform="translate(18, 62)">
+      <rect width="344" height="68" rx="8" fill="#F4F5F7" stroke="#E7E9ED"/>
+      <text x="14" y="22" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="12" fill="#15171B">File Selection &amp; Pre-hash Engine</text>
+      <text x="14" y="40" font-size="11" fill="#5B6472">&bull; <tspan font-family="monospace">File.slice(offset, 16384)</tspan> &rarr; 16 KiB binary chunks</text>
+      <text x="14" y="56" font-size="11" fill="#5B6472">&bull; <tspan font-family="monospace">crypto.subtle.digest('SHA-256')</tspan> whole-file hash</text>
+    </g>
+
+    <!-- 2. Sender Control & Backpressure -->
+    <g transform="translate(18, 142)">
+      <rect width="344" height="82" rx="8" fill="#F4F5F7" stroke="#E7E9ED"/>
+      <text x="14" y="22" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="12" fill="#15171B">SlipstreamFileSender (js/file-sender.js)</text>
+      <text x="14" y="40" font-size="11" fill="#5B6472">&bull; Protocol Version 1 Envelope generator</text>
+      <text x="14" y="56" font-size="11" fill="#5B6472">&bull; Back-pressure: <tspan font-family="monospace">bufferedAmount</tspan> pause @ 1 MiB</text>
+      <text x="14" y="72" font-size="11" fill="#5B6472">&bull; Resume on <tspan font-family="monospace">bufferedamountlow</tspan> (&le; 256 KiB)</text>
+    </g>
+
+    <!-- 3. WebRTC Manager -->
+    <g transform="translate(18, 236)">
+      <rect width="344" height="88" rx="8" fill="#E6F5F1" stroke="#2E9E83" stroke-width="1.2"/>
+      <text x="14" y="22" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="12" fill="#2E9E83">SlipstreamPeer Transport Layer (js/webrtc.js)</text>
+      <text x="14" y="40" font-size="11" fill="#15171B">&bull; <tspan font-family="monospace">sendControl(msg)</tspan> &rarr; JSON UTF-8 envelope</text>
+      <text x="14" y="56" font-size="11" fill="#15171B">&bull; <tspan font-family="monospace">sendBinary(chunk)</tspan> &rarr; Raw ArrayBuffer</text>
+      <text x="14" y="72" font-size="11" fill="#5B6472">&bull; Ordered, reliable <tspan font-family="monospace">RTCDataChannel</tspan></text>
+    </g>
+  </g>
+
+  <!-- Joiner Device (Browser B - Receiver) -->
+  <g transform="translate(570, 275)" filter="url(#card-shadow)">
+    <rect width="380" height="340" rx="16" fill="#FFFFFF" stroke="#E7E9ED" stroke-width="1.5"/>
+    <!-- Card Header -->
+    <rect width="380" height="48" rx="16" fill="#15171B"/>
+    <rect y="32" width="380" height="16" fill="#15171B"/>
+    <!-- Phone Icon -->
+    <svg x="20" y="13" width="16" height="22" viewBox="0 0 18 26" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="1" y="1" width="16" height="24" rx="3"></rect>
+    </svg>
+    <text x="48" y="29" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="15" fill="#FFFFFF">Receiver / Joiner (Mobile Phone)</text>
+    <rect x="280" y="12" width="85" height="24" rx="12" fill="#2E9E83"/>
+    <text x="295" y="28" font-size="11" font-weight="700" fill="#FFFFFF">RECEIVER</text>
+
+    <!-- Sub-components inside Receiver -->
+    <!-- 1. WebRTC Manager -->
+    <g transform="translate(18, 62)">
+      <rect width="344" height="80" rx="8" fill="#E6F5F1" stroke="#2E9E83" stroke-width="1.2"/>
+      <text x="14" y="22" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="12" fill="#2E9E83">SlipstreamPeer Transport Layer (js/webrtc.js)</text>
+      <text x="14" y="40" font-size="11" fill="#15171B">&bull; <tspan font-family="monospace">binaryType = 'arraybuffer'</tspan> + Blob arrival queue</text>
+      <text x="14" y="56" font-size="11" fill="#15171B">&bull; Envelope routing: <tspan font-family="monospace">onControlMessage()</tspan></text>
+      <text x="14" y="72" font-size="11" fill="#15171B">&bull; Binary chunk routing: <tspan font-family="monospace">onBinaryMessage()</tspan></text>
+    </g>
+
+    <!-- 2. Receiver Engine -->
+    <g transform="translate(18, 154)">
+      <rect width="344" height="80" rx="8" fill="#F4F5F7" stroke="#E7E9ED"/>
+      <text x="14" y="22" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="12" fill="#15171B">SlipstreamFileReceiver (js/file-receiver.js)</text>
+      <text x="14" y="40" font-size="11" fill="#5B6472">&bull; Validates metadata before showing user preview</text>
+      <text x="14" y="56" font-size="11" fill="#5B6472">&bull; Collects ordered chunks into Blob</text>
+      <text x="14" y="72" font-size="11" fill="#5B6472">&bull; Throttled <tspan font-family="monospace">file-progress</tspan> updates (250ms / 1%)</text>
+    </g>
+
+    <!-- 3. Integrity & Download -->
+    <g transform="translate(18, 246)">
+      <rect width="344" height="78" rx="8" fill="#F4F5F7" stroke="#E7E9ED"/>
+      <text x="14" y="22" font-family="'Space Grotesk', sans-serif" font-weight="600" font-size="12" fill="#15171B">Verification &amp; Download Engine</text>
+      <text x="14" y="40" font-size="11" fill="#5B6472">&bull; Compares computed SHA-256 vs offer &amp; completion</text>
+      <text x="14" y="56" font-size="11" fill="#5B6472">&bull; Emits <tspan font-family="monospace">file-complete-ack</tspan> with status: verified</text>
+      <text x="14" y="72" font-size="11" fill="#2E9E83">&bull; Unlocks verified Blob download link</text>
+    </g>
+  </g>
+
+  <!-- Connecting Lines: Signaling -->
+  <!-- Sender -> Server (SDP Offer) -->
+  <path d="M 240 275 L 240 160 L 320 160" fill="none" stroke="#5B6472" stroke-width="1.8" stroke-dasharray="4 4" marker-end="url(#arrow-steel)"/>
+  <text x="210" y="210" font-size="10" font-weight="600" fill="#5B6472">SDP Offer / ICE</text>
+
+  <!-- Server -> Joiner (SDP Offer / Answer) -->
+  <path d="M 680 160 L 760 160 L 760 275" fill="none" stroke="#5B6472" stroke-width="1.8" stroke-dasharray="4 4" marker-end="url(#arrow-steel)"/>
+  <text x="770" y="210" font-size="10" font-weight="600" fill="#5B6472">SDP Answer / ICE</text>
+
+  <!-- Connecting Highway: Direct WebRTC Data Channel -->
+  <g transform="translate(430, 410)">
+    <!-- Main Pipe Outline -->
+    <rect x="0" y="0" width="140" height="70" rx="10" fill="#FFFFFF" stroke="#FF5A3C" stroke-width="2.2" filter="url(#card-shadow)"/>
+    <text x="16" y="22" font-family="'Space Grotesk', sans-serif" font-weight="700" font-size="12" fill="#FF5A3C">RTCDataChannel</text>
+    <text x="14" y="38" font-size="10" font-weight="600" fill="#15171B">slipstream-transfer</text>
+    <text x="18" y="52" font-size="9.5" fill="#5B6472">&bull; DTLS Encrypted</text>
+    <text x="18" y="64" font-size="9.5" fill="#5B6472">&bull; Peer-to-Peer direct</text>
+
+    <!-- Arrow Left-to-Right: Binary Chunks (Coral) -->
+    <path d="M -30 25 L -5 25" fill="none" stroke="#FF5A3C" stroke-width="2.5" marker-end="url(#arrow-coral)"/>
+    <path d="M 145 25 L 170 25" fill="none" stroke="#FF5A3C" stroke-width="2.5" marker-end="url(#arrow-coral)"/>
+
+    <!-- Arrow Right-to-Left: Progress & ACKs (Vector Teal) -->
+    <path d="M 170 50 L 145 50" fill="none" stroke="#2E9E83" stroke-width="2" marker-end="url(#arrow-vector)"/>
+    <path d="M -5 50 L -30 50" fill="none" stroke="#2E9E83" stroke-width="2" marker-end="url(#arrow-vector)"/>
+  </g>
+
+  <!-- Flow Legend Below -->
+  <g transform="translate(180, 635)">
+    <line x1="0" y1="10" x2="30" y2="10" stroke="#5B6472" stroke-width="1.8" stroke-dasharray="4 4"/>
+    <text x="38" y="14" font-size="11" fill="#5B6472">Signaling / Handshake (PHP REST via LAN)</text>
+
+    <line x1="280" y1="10" x2="310" y2="10" stroke="#FF5A3C" stroke-width="2.5"/>
+    <text x="318" y="14" font-size="11" fill="#15171B">Direct Binary 16 KiB Chunks &amp; Offers</text>
+
+    <line x1="560" y1="10" x2="590" y2="10" stroke="#2E9E83" stroke-width="2.5"/>
+    <text x="598" y="14" font-size="11" fill="#15171B">Direct ACKs &amp; Throttled Progress (P2P)</text>
+  </g>
+</svg>
