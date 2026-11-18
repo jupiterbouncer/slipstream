@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Slipstream WebRTC Connection Manager
  * Manages RTCPeerConnection, signaling exchange, and RTCDataChannel (§4, §5, §10, §12).
  * Direct peer-to-peer data transport; zero byte routing through server.
