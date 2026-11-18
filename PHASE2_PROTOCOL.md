@@ -1,4 +1,4 @@
-﻿# Slipstream Phase 2 — File Transfer Protocol
+# Slipstream Phase 2 — File Transfer Protocol
 
 **Status:** Implementation contract for Phase 2  
 **Protocol version:** `1`  

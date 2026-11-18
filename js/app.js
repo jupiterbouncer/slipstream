@@ -150,8 +150,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function appendChatLog(prefix, message) {
     if (!testChatLog) return;
+
+    // Clear initial placeholder if this is the first message
+    if (testChatLog.children.length === 0 && testChatLog.textContent.trim() === 'Data channel ready.') {
+      testChatLog.textContent = '';
+    }
+
+    // Sanitize message: strip any accidental or accumulated prefixes from prior entries
+    const rawMsg = typeof message === 'string' ? message : String(message || '');
+    const cleanMessage = rawMsg.replace(/^(?:(?:You|Peer|System):\s*)+/i, '').trim();
+
+    // Create a brand-new, isolated DOM element for this single entry with no carryover
     const line = document.createElement('div');
-    line.textContent = `${prefix}: ${message}`;
+    line.className = 'chat-log-entry';
+    line.textContent = `${prefix}: ${cleanMessage}`;
+
     testChatLog.appendChild(line);
     testChatLog.scrollTop = testChatLog.scrollHeight;
   }
@@ -1102,12 +1115,17 @@ document.addEventListener('DOMContentLoaded', () => {
    * Phase 1 Test Message: Send message directly across data channel
    */
   function sendTestMessage() {
-    const text = testMessageInput.value.trim();
+    const raw = testMessageInput.value;
+    const text = raw.trim();
     if (!text || !state.peer) return;
 
+    // Ensure outgoing message is stripped of any legacy/accidental prefixes
+    const cleanText = text.replace(/^(?:(?:You|Peer|System):\s*)+/i, '').trim();
+    if (!cleanText) return;
+
     try {
-      state.peer.send(JSON.stringify({ type: 'text', message: text }));
-      appendChatLog('You', text);
+      state.peer.send(JSON.stringify({ type: 'text', message: cleanText }));
+      appendChatLog('You', cleanText);
       testMessageInput.value = '';
     } catch (err) {
       alert(`Send failed: ${err.message}`);
