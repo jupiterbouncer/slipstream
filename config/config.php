@@ -7,11 +7,11 @@
 
 $defaults = [
     'db' => [
-        'host' => getenv('DB_HOST') ?: '127.0.0.1',
-        'port' => (int)(getenv('DB_PORT') ?: 3306),
-        'dbname' => getenv('DB_NAME') ?: 'slipstream',
-        'user' => getenv('DB_USER') ?: 'root',
-        'pass' => getenv('DB_PASS') !== false ? getenv('DB_PASS') : 'mysql',
+        'host' => '127.0.0.1',
+        'port' => 3306,
+        'dbname' => 'slipstream',
+        'user' => 'root',
+        'pass' => '',
         'charset' => 'utf8mb4',
     ],
     'session' => [
@@ -37,4 +37,25 @@ if (file_exists($localConfigPath)) {
     }
 }
 
+$deployed = in_array(getenv('APP_ENV'), ['staging', 'production'], true) || getenv('RAILWAY_ENVIRONMENT_ID') !== false;
+$missing = [];
+foreach (['DB_HOST' => 'host', 'DB_PORT' => 'port', 'DB_NAME' => 'dbname', 'DB_USER' => 'user', 'DB_PASS' => 'pass'] as $variable => $key) {
+    $value = getenv($variable);
+    if ($value !== false) {
+        $defaults['db'][$key] = $value;
+    }
+    if ($deployed && ($value === false || $value === '')) {
+        $missing[] = $variable;
+    }
+}
+if ($missing) {
+    error_log('Slipstream missing database variables: ' . implode(', ', $missing));
+    throw new RuntimeException('Incomplete database configuration.');
+}
+$port = filter_var($defaults['db']['port'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]);
+if ($port === false) {
+    error_log('Slipstream DB_PORT must be an integer from 1 to 65535.');
+    throw new RuntimeException('Invalid database configuration.');
+}
+$defaults['db']['port'] = $port;
 return $defaults;

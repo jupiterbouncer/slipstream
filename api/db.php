@@ -4,7 +4,7 @@
  * Ensures strict prepared statements, secure credentials handling, and lazy cleanup.
  */
 
-require_once __DIR__ . '/../config/config.php';
+declare(strict_types=1);
 
 function getDbConnection(): PDO {
     static $pdo = null;
@@ -31,15 +31,10 @@ function getDbConnection(): PDO {
 
     try {
         $pdo = new PDO($dsn, $db['user'], $db['pass'], $options);
+        $pdo->exec("SET time_zone = '+00:00'");
     } catch (PDOException $e) {
-        // Return structured 500 error without leaking raw database credentials
-        http_response_code(500);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'error' => 'Database connection failed',
-            'message' => 'Could not connect to signaling database. Please check MySQL server and configuration.'
-        ]);
-        exit;
+        error_log('Slipstream database connection failed. Check DB variables and private networking. Error code ' . $e->getCode());
+        throw new RuntimeException('Database connection failed.');
     }
 
     return $pdo;
@@ -59,7 +54,7 @@ function runLazyCleanup(PDO $pdo): void {
         $stmt->execute();
     } catch (Exception $e) {
         // Cleanup errors should not interrupt the main request flow
-        error_log('Slipstream lazy cleanup error: ' . $e->getMessage());
+        error_log('Slipstream lazy cleanup error: ' . $e->getCode());
     }
 }
 
@@ -86,7 +81,7 @@ function isRateLimited(PDO $pdo, string $ip): bool {
         return false;
     }
 
-    $lastAttempt = strtotime($row['last_attempt_at']);
+    $lastAttempt = strtotime($row['last_attempt_at'] . ' UTC');
     if (time() - $lastAttempt > $windowSeconds) {
         // Window expired, reset
         $clearStmt = $pdo->prepare('DELETE FROM rate_limits WHERE ip_hash = :hash');
@@ -110,14 +105,5 @@ function recordFailedAttempt(PDO $pdo, string $ip): void {
             failed_attempts = failed_attempts + 1,
             last_attempt_at = NOW()
     ');
-    $stmt->execute([':hash' => $ipHash]);
-}
-
-/**
- * Reset rate limit counter upon successful validation.
- */
-function clearRateLimit(PDO $pdo, string $ip): void {
-    $ipHash = hash('sha256', $ip . '_slipstream_salt');
-    $stmt = $pdo->prepare('DELETE FROM rate_limits WHERE ip_hash = :hash');
     $stmt->execute([':hash' => $ipHash]);
 }

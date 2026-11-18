@@ -5,11 +5,11 @@
     RewriteBase /
 
     # Block access to hidden files and sensitive directories
-    RewriteRule ^(config|database|\.git|\.env) - [F,L]
+    RewriteRule ^(?:config|database|deploy|api)(?:/|$)|(?:^|/)\.|^(?:Dockerfile|railway\.json|router\.php)$ - [F,L]
     RewriteRule \.(sql|log|md|example|gitignore)$ - [F,L]
 
     # Route /sessions requests to api/sessions.php
-    RewriteRule ^sessions(/.*)?$ api/sessions.php [QSA,L]
+    RewriteRule ^sessions(/.*)?$ api/sessions.php [END]
 
     # Serve existing files and directories directly
     RewriteCond %{REQUEST_FILENAME} -f [OR]

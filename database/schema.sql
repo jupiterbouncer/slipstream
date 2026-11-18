@@ -2,8 +2,7 @@
 -- Table for temporary WebRTC signaling metadata
 -- File bytes NEVER touch this database.
 
-CREATE DATABASE IF NOT EXISTS slipstream CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE slipstream;
+-- Run against the database selected by the caller.
 
 -- Sessions table as specified in Slipstream Technical Specification §6
 CREATE TABLE IF NOT EXISTS sessions (

@@ -19,6 +19,7 @@ The PHP/MySQL server is used only for temporary signaling. It coordinates the co
 - [Project scope](#project-scope)
 - [Security and privacy](#security-and-privacy)
 - [Design system](#design-system)
+- [Railway staging](#railway-staging)
 - [Development setup](#development-setup)
 - [Testing checklist](#testing-checklist)
 - [Limitations](#limitations)
@@ -181,13 +182,15 @@ The visual identity is built around one idea: **the connection between the devic
 - Use restrained motion and respect `prefers-reduced-motion`.
 - Mobile layouts must preserve the device-to-device trail, stacking the endpoints and turning the trail vertical where needed.
 
-## Development setup
+## Railway staging
 
-The exact commands and file paths depend on the repository implementation. Keep this section aligned with the actual project files once they exist.
+The staging configuration serves the frontend and PHP signaling API from one HTTPS domain and connects privately to MySQL. The deployment guide records a confirmed integration issue that blocks file transfer after the data channel opens. It also covers database setup, rollback and the two-device acceptance test. [Deploy Slipstream on Railway](DEPLOYMENT.md)
+
+## Development setup
 
 ### Requirements
 
-- A PHP environment with the PDO/MySQL extension (or MySQLi if that is the chosen implementation).
+- A PHP environment with PDO and the pdo_mysql extension.
 - MySQL or a compatible MariaDB installation.
 - A modern browser with WebRTC, File API and Web Crypto support.
 - Two physical devices connected to the same local network for meaningful end-to-end testing.
@@ -197,7 +200,7 @@ The exact commands and file paths depend on the repository implementation. Keep 
 
 1. Clone or download the project repository.
 2. Create the MySQL database.
-3. Run the project's schema SQL to create the `sessions` table.
+3. Run the project's schema SQL to create the `sessions` and `rate_limits` tables.
 4. Configure database credentials in a server-side configuration file kept outside the public web root where possible. Never commit real credentials.
 5. Configure the web server so the public frontend can call the PHP API under the documented `/sessions` endpoints.
 6. Serve the site over HTTPS when testing camera scanning or accessing it from another device. `localhost` has special secure-context treatment, but a LAN IP address generally does not.
@@ -234,19 +237,18 @@ slipstream/
 
 ### Quickstart Setup
 
-1. **Import the database schema:**
+1. **Create the local database.** Open the MySQL client with `mysql -u root -p` and run:
 
-   ```bash
-   mysql -u root -p < database/schema.sql
+   ```sql
+   CREATE DATABASE IF NOT EXISTS slipstream CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
    ```
 
-   *(On AMPPS on Windows, the default MySQL user is `root` and default password is `mysql`)*.
-2. **Configure database credentials:**
-   Copy `config/config.example.php` to `config/config.local.php` if your local MySQL settings differ from default:
+2. **Configure and initialize it.** Copy `config/config.example.php` to `config/config.local.php` and enter your local credentials. Alternatively set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASS` in your shell. Run from the repository root:
 
-   ```bash
-   cp config/config.example.php config/config.local.php
+   ```sh
+   php database/init.php
    ```
+
 3. **Start the local development server:**
    Using PHP's built-in web server:
 

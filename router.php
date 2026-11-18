@@ -5,11 +5,11 @@
  * php -S 0.0.0.0:8000 router.php
  */
 
-$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$uri = rawurldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/');
 
 // Block direct access to sensitive config, schema, or hidden files
 if (
-    preg_match('#^/(config|database|\.git|\.env)#i', $uri) ||
+    preg_match('#(?:^|/)(?:\.|config(?:/|$)|database(?:/|$)|deploy(?:/|$)|api(?:/|$)|Dockerfile$|railway\.json$|router\.php$)#i', $uri) ||
     preg_match('#\.(sql|log|md|example|gitignore)$#i', $uri)
 ) {
     http_response_code(403);
@@ -18,7 +18,7 @@ if (
 }
 
 // Route /sessions API endpoints
-if (preg_match('#^/sessions#', $uri)) {
+if (preg_match('#^/sessions(?:/|$)#', $uri)) {
     require __DIR__ . '/api/sessions.php';
     exit;
 }
