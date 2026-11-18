@@ -189,25 +189,25 @@
           <!-- File Selection Area (Phase 2 Preview & Dropzone) -->
           <div id="sender-file-section" style="margin-top: 1rem; display: none;">
             <div class="dropzone" id="file-dropzone" role="button" tabindex="0" aria-label="Choose a file or tap to browse">
-              <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              <p class="dropzone-title">Choose a file or tap to browse</p>
-              <p class="dropzone-subtitle">Tap here or drag & drop (Phase 2 transfer)</p>
+              <span class="drop-demo" aria-hidden="true">
+                <span class="demo-surface"></span>
+                <span class="demo-tray"></span>
+                <span class="paper-icon"></span>
+              </span>
+              <p class="dropzone-title">Drop a file here</p>
+              <p class="dropzone-subtitle">Or choose one from your device.</p>
               <span class="btn btn-secondary dropzone-btn" aria-hidden="true">Browse files</span>
               <input type="file" id="file-input" style="display: none;">
             </div>
 
             <!-- File preview card matching reference screen 3 -->
             <div class="file-preview-card" id="file-preview" style="display: none;">
-              <svg class="file-preview-icon" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path>
-              </svg>
+              <span class="file-pieces" aria-hidden="true">
+                <span class="paper-icon"></span><i></i><i></i><i></i>
+              </span>
               <div class="file-info">
                 <p class="file-name" id="preview-filename">document.pdf</p>
-                <p class="file-meta" id="preview-filesize">2.4 MB</p>
+                <p class="file-meta"><span id="preview-filesize"></span><span id="preview-filetype"></span></p>
               </div>
               <button type="button" class="file-remove-btn" id="btn-remove-file" aria-label="Remove selected file">✕</button>
             </div>
@@ -358,7 +358,7 @@
 
             <div class="trail-track" id="transfer-trail-track">
               <div class="trail-fill" id="transfer-trail-fill" style="width: 0%;">
-                <div class="trail-streak" aria-hidden="true"></div>
+                <span class="trail-blocks" aria-hidden="true"><i></i><i></i><i></i></span>
                 <!-- Small Coral geometric marker traveling along trail (Requirement A) -->
                 <div class="coral-marker" id="coral-marker" title="Coral marker">
                   <div class="coral-marker-core"></div>
@@ -369,6 +369,9 @@
 
             <div class="device-node">
               <div class="device-glyph" id="transfer-node-receiver">
+                <span class="file-pieces verified-file" aria-hidden="true">
+                  <span class="paper-icon"></span><i></i><i></i><i></i>
+                </span>
                 <svg width="20" height="24" viewBox="0 0 18 26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <rect x="1" y="1" width="16" height="24" rx="3"></rect>
                 </svg>
@@ -450,7 +453,7 @@
 
     <!-- Footer (§8) -->
     <footer class="app-footer">
-      <div>Slipstream &bull; CS341 Web Technologies Final Project</div>
+      <div>Slipstream &bull; CS341 Final Project</div>
       <div class="footer-links">
         <a href="#how" class="footer-link" data-modal="modal-how">How it works</a>
         <a href="#privacy" class="footer-link" data-modal="modal-privacy">Privacy</a>
@@ -458,6 +461,7 @@
       </div>
     </footer>
   </div>
+  <div class="ui-toast" id="ui-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Scripts: Vendor QR, API client, WebRTC manager, Phase 2 engines, App logic (§7.4) -->
   <script src="js/vendor/qrcode.min.js"></script>
@@ -466,5 +470,6 @@
   <script src="js/file-sender.js"></script>
   <script src="js/file-receiver.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/ui-motion.js"></script>
 </body>
 </html>
