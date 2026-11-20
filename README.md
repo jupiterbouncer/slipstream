@@ -10,6 +10,8 @@ The PHP/MySQL server is used only for temporary signaling. It coordinates the co
 
 ---
 
+**Selected staging host:** InfinityFree at `https://slipstream.gt.tc`. See the [deployment guide](INFINITYFREE_DEPLOYMENT.md) for provider restrictions, the upload package and the public acceptance checklist.
+
 ## Contents
 
 - [How it works](#how-it-works)
@@ -74,7 +76,7 @@ Supporting features are deliberately secondary:
 | File handling               | Browser File API (`File`, `File.slice()`, `Blob`) |
 | Integrity check             | Browser SHA-256 digest, preferably via Web Crypto API   |
 
-The project deliberately avoids Node.js, frontend frameworks, WebSocket servers, cloud file storage and ORM/query-builder dependencies. REST polling is used for signaling at approximately one-second intervals while connection information is pending.
+The project deliberately avoids Node.js, frontend frameworks, WebSocket servers, cloud file storage and ORM/query-builder dependencies. REST polling is used for signaling at a configurable 2.5-second interval with bounded retries while connection information is pending.
 
 ## Architecture
 
@@ -108,7 +110,7 @@ The project deliberately avoids Node.js, frontend frameworks, WebSocket servers,
 | `GET`    | `/sessions/{code}/answer`                          | Poll for the answer                            |
 | `POST`   | `/sessions/{code}/ice-candidates`                  | Submit an ICE candidate with the sender's role |
 | `GET`    | `/sessions/{code}/ice-candidates?role=host\|joiner` | Retrieve candidates from the specified role    |
-| `DELETE` | `/sessions/{code}`                                 | Delete temporary signaling data                |
+| `POST`   | `/sessions/{code}/delete`                                 | Delete temporary signaling data                |
 
 For the ICE `GET`, `role` identifies whose candidates are being retrieved. The host retrieves `role=joiner`; the joiner retrieves `role=host`.
 
@@ -240,9 +242,8 @@ slipstream/
    mysql -u root -p < database/schema.sql
    ```
 
-   *(On AMPPS on Windows, the default MySQL user is `root` and default password is `mysql`)*.
 2. **Configure database credentials:**
-   Copy `config/config.example.php` to `config/config.local.php` if your local MySQL settings differ from default:
+   Copy `config/config.example.php` to `config/config.local.php` and enter your local MySQL credentials privately:
 
    ```bash
    cp config/config.example.php config/config.local.php

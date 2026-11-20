@@ -4,10 +4,14 @@
  * Direct peer-to-peer data transport; zero byte routing through server.
  */
 
+// Time between completed signaling polls on shared hosting.
+const SIGNALING_POLL_MS = 2500;
+
 class SlipstreamPeer {
   constructor({
     role,
     code,
+    pollIntervalMs = SIGNALING_POLL_MS,
     onStatusChange,
     onChannelOpen,
     onChannelMessage,
@@ -28,7 +32,9 @@ class SlipstreamPeer {
 
     this.pc = null;
     this.dataChannel = null;
-    this.pollingInterval = null;
+    this.pollIntervalMs = Math.max(1000, pollIntervalMs);
+    this.pollTimer = null;
+    this.pollController = null;
     this.isClosed = false;
     this.processedCandidates = new Set();
     this.candidateCursor = 0;
@@ -64,6 +70,7 @@ class SlipstreamPeer {
         if (state === 'connected') {
           this.stopPolling();
         } else if (state === 'failed' || state === 'disconnected') {
+          this.stopPolling();
           this.onError(new Error(`WebRTC peer connection state is ${state}`));
         }
       };
@@ -81,6 +88,7 @@ class SlipstreamPeer {
         await this.initJoiner();
       }
     } catch (err) {
+      if (this.isClosed) return;
       this.onError(err);
       this.close();
     }
@@ -98,7 +106,9 @@ class SlipstreamPeer {
 
     this.onStatusChange('Creating connection offer...');
     const offer = await this.pc.createOffer();
+    if (this.isClosed) return;
     await this.pc.setLocalDescription(offer);
+    if (this.isClosed) return;
 
     this.onStatusChange('Submitting offer to signaling service...');
     await Api.sendOffer(this.code, {
@@ -106,6 +116,7 @@ class SlipstreamPeer {
       type: offer.type,
     });
 
+    if (this.isClosed) return;
     this.onStatusChange('Waiting for peer to join...');
     this.startHostPolling();
   }
@@ -128,84 +139,81 @@ class SlipstreamPeer {
    * Host polling loop: waits for answer and fetches joiner's ICE candidates.
    */
   startHostPolling() {
-    let hasAnswer = false;
-
-    this.pollingInterval = setInterval(async () => {
-      if (this.isClosed) return;
-
-      try {
-        // 1. Poll for answer if not yet received
-        if (!hasAnswer) {
-          const answer = await Api.getAnswer(this.code);
-          if (answer && answer.sdp) {
-            await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
-            hasAnswer = true;
-            this.onStatusChange('Received answer. Connecting directly...');
-          }
-        }
-
-        // 2. Poll for joiner ICE candidates (role=joiner as per §5 contract)
-        if (hasAnswer) {
-          await this.pollCandidates('joiner');
-        }
-      } catch (err) {
-        console.warn('Host signaling poll error:', err);
+    this.startPolling(async signal => {
+      if (!this.pc.remoteDescription) {
+        const answer = await Api.getAnswer(this.code, signal);
+        if (signal.aborted || !answer) return;
+        await this.pc.setRemoteDescription(answer);
+        if (!signal.aborted) this.onStatusChange('Received answer. Connecting directly...');
       }
-    }, 1000);
+      if (!signal.aborted) await this.pollCandidates('joiner', signal);
+    });
   }
 
-  /**
-   * Joiner polling loop: waits for offer, then fetches host's ICE candidates.
-   */
   startJoinerPolling() {
-    let hasSetOffer = false;
-
-    this.pollingInterval = setInterval(async () => {
-      if (this.isClosed) return;
-
-      try {
-        // 1. Poll for offer
-        if (!hasSetOffer) {
-          const offer = await Api.getOffer(this.code);
-          if (offer && offer.sdp) {
-            hasSetOffer = true;
-            this.onStatusChange('Offer received. Generating answer...');
-
-            await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await this.pc.createAnswer();
-            await this.pc.setLocalDescription(answer);
-
-            await Api.sendAnswer(this.code, {
-              sdp: answer.sdp,
-              type: answer.type,
-            });
-
-            this.onStatusChange('Answer submitted. Connecting...');
-          }
-        }
-
-        // 2. Poll for host ICE candidates (role=host as per §5 contract)
-        if (hasSetOffer) {
-          await this.pollCandidates('host');
-        }
-      } catch (err) {
-        console.warn('Joiner signaling poll error:', err);
+    let pendingAnswer;
+    this.startPolling(async signal => {
+      if (!this.pc.remoteDescription) {
+        const offer = await Api.getOffer(this.code, signal);
+        if (signal.aborted || !offer) return;
+        await this.pc.setRemoteDescription(offer);
+        if (signal.aborted) return;
+        const answer = await this.pc.createAnswer();
+        if (signal.aborted) return;
+        await this.pc.setLocalDescription(answer);
+        pendingAnswer = { type: answer.type, sdp: answer.sdp };
       }
-    }, 1000);
+      if (signal.aborted) return;
+      if (pendingAnswer) {
+        // Retry a transient POST failure with the same negotiated answer.
+        await Api.sendAnswer(this.code, pendingAnswer, signal);
+        pendingAnswer = null;
+        if (!signal.aborted) this.onStatusChange('Answer submitted. Connecting...');
+      }
+      if (!signal.aborted) await this.pollCandidates('host', signal);
+    });
+  }
+
+  startPolling(step) {
+    if (this.isClosed || this.isChannelOpen() || this.pollController) return;
+    this.pollController = new AbortController();
+    const { signal } = this.pollController;
+    let failures = 0;
+    const poll = async () => {
+      try {
+        await step(signal);
+        failures = 0;
+      } catch (err) {
+        if (signal.aborted) return;
+        failures++;
+        const transient = err instanceof TypeError || err.status === 408 || err.status >= 500;
+        if (!transient || failures >= 5) {
+          this.close();
+          this.onError(err);
+          return;
+        }
+      }
+      if (!signal.aborted) {
+        const delay = Math.min(30000, this.pollIntervalMs * 2 ** failures);
+        this.pollTimer = setTimeout(poll, delay);
+      }
+    };
+    this.pollTimer = setTimeout(poll, this.pollIntervalMs);
   }
 
   /**
    * Fetch and add new ICE candidates for the specified peer role.
    */
-  async pollCandidates(peerRole) {
+  async pollCandidates(peerRole, signal) {
     if (!this.pc || !this.pc.remoteDescription) return;
 
-    const candidates = await Api.getIceCandidates(this.code, peerRole, this.candidateCursor);
+    const candidates = await Api.getIceCandidates(this.code, peerRole, this.candidateCursor, signal);
     for (const c of candidates) {
+      if (signal.aborted) return;
+      this.candidateCursor++;
       const candidateKey = JSON.stringify(c);
       if (!this.processedCandidates.has(candidateKey)) {
         this.processedCandidates.add(candidateKey);
-        this.candidateCursor++;
         try {
           await this.pc.addIceCandidate(new RTCIceCandidate(c));
         } catch (candidateErr) {
@@ -233,6 +241,7 @@ class SlipstreamPeer {
     };
 
     channel.onclose = () => {
+      this.stopPolling();
       this.onStatusChange('Data channel closed.');
       this.onChannelClose();
     };
@@ -337,10 +346,10 @@ class SlipstreamPeer {
   }
 
   stopPolling() {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-    }
+    clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+    this.pollController?.abort();
+    this.pollController = null;
   }
 
   /**
@@ -364,6 +373,9 @@ class SlipstreamPeer {
 
     if (this.pc) {
       try {
+        this.pc.onconnectionstatechange = null;
+        this.pc.oniceconnectionstatechange = null;
+        this.pc.onicecandidate = null;
         this.pc.close();
       } catch {}
       this.pc = null;

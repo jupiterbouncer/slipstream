@@ -179,7 +179,11 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Reset application state and clean up resources (§8)
    */
-  async function resetApp() {
+  let pairingAttempt = 0;
+  function resetApp() {
+    pairingAttempt++;
+    btnSubmitJoin.disabled = false;
+    btnSubmitJoin.textContent = 'Connect to device';
     setHeaderConnected(false);
 
     // Clean up Phase 2 transfer engines & object URLs (§8)
@@ -227,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (state.code) {
-      await Api.deleteSession(state.code);
+      void Api.deleteSession(state.code);
       state.code = null;
     }
 
@@ -525,12 +529,14 @@ document.addEventListener('DOMContentLoaded', () => {
    * Host Flow (Send a file)
    */
   async function startHostFlow() {
+    const attempt = ++pairingAttempt;
     try {
       showScreen('pairing');
       hostStatusMsg.textContent = 'Generating temporary session...';
       hostCodeText.textContent = '------';
 
       const session = await Api.createSession();
+      if (attempt !== pairingAttempt) return Api.deleteSession(session.code);
       state.role = 'host';
       state.code = session.code;
 
@@ -609,6 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await state.peer.start();
     } catch (err) {
       console.error('Failed to create host session:', err);
+      if (attempt !== pairingAttempt) return;
       alert(`Could not start session: ${err.message}`);
       resetApp();
     }
@@ -626,6 +633,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function handleJoinSubmit(e) {
     if (e) e.preventDefault();
+    if (btnSubmitJoin.disabled) return;
+    const attempt = ++pairingAttempt;
     const code = joinCodeInput.value.trim().toUpperCase();
 
     if (!code || code.length < 4) {
@@ -641,6 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Validate code with API
       const session = await Api.getSession(code);
+      if (attempt !== pairingAttempt) return;
       state.code = session.code;
 
       // Initialize WebRTC Peer Connection as Joiner
@@ -697,6 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       await state.peer.start();
     } catch (err) {
+      if (attempt !== pairingAttempt) return;
       btnSubmitJoin.disabled = false;
       btnSubmitJoin.textContent = 'Connect to device';
       joinErrorMsg.textContent = err.message || 'Invalid or expired pairing code.';
