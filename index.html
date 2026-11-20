@@ -288,15 +288,15 @@
           </div>
 
           <!-- Phase 1 Data Channel Proof & Verification Test Box -->
-          <div class="phase-test-box">
+          <div class="phase-test-box" id="phase-chat" hidden>
             <h4>Phase 1 Data Channel Verification</h4>
             <p style="font-size: 0.8rem; color: var(--color-steel); margin-bottom: 0.5rem;">
               Send an instant text message directly through the WebRTC data channel to verify zero-server peer transmission:
             </p>
             <div class="chat-log" id="test-chat-log">Data channel ready.</div>
             <div style="display: flex; gap: 0.5rem;">
-              <input type="text" id="test-message-input" placeholder="Type a message..." style="flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-mist); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none;">
-              <button type="button" class="btn btn-secondary" id="btn-send-test-msg" style="padding: 0.5rem 1rem; font-size: 0.85rem;">Send</button>
+              <input type="text" id="test-message-input" disabled placeholder="Type a message..." style="flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-mist); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none;">
+              <button type="button" class="btn btn-secondary" id="btn-send-test-msg" disabled style="padding: 0.5rem 1rem; font-size: 0.85rem;">Send</button>
             </div>
           </div>
 

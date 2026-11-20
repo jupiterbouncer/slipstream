@@ -4,11 +4,11 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function fixture() {
+function fixture(globals = {}) {
   let timer;
   const errors = [];
   const scope = {
-    AbortController,
+    ...globals, AbortController,
     setTimeout(fn, delay) { assert.equal(timer, undefined); timer = { fn, delay }; return 1; },
     clearTimeout() { timer = undefined; },
   };
@@ -69,5 +69,65 @@ test('opening the data channel clears the pending poll', () => {
   const channel = {};
   f.peer.setupDataChannel(channel);
   channel.onopen();
+  assert.equal(f.delay, undefined);
+});
+
+test('transient candidate POST keeps the same candidate until acknowledged', async () => {
+  const posted = [];
+  const f = fixture({ Api: { async sendIceCandidate(code, role, candidate) {
+    posted.push(candidate);
+    if (posted.length === 1) throw Object.assign(new Error(), { status: 503 });
+  } } });
+  f.peer.pendingCandidates.push('first', 'second');
+  let polls = 0;
+  f.peer.startPolling(async () => { polls++; });
+  await f.tick();
+  assert.equal(f.delay, 5000);
+  assert.equal(polls, 0);
+  await f.tick();
+  assert.deepEqual(posted, ['first', 'first', 'second']);
+  assert.equal(polls, 1);
+  f.peer.close();
+});
+
+test('remote cursor resumes at the first unapplied candidate and skips duplicate deliveries', async () => {
+  const rows = [{ candidate: 'a' }, { candidate: 'b' }, { candidate: 'a' }];
+  const cursors = [], applied = [];
+  const f = fixture({
+    Api: { getIceCandidates: async (code, role, after) => { cursors.push(after); return rows.slice(after); } },
+    RTCIceCandidate: class { constructor(row) { this.candidate = row.candidate; } },
+  });
+  let failed = false;
+  f.peer.pc = { remoteDescription: {}, async addIceCandidate(row) {
+    if (row.candidate === 'b' && !failed) {
+      failed = true;
+      throw Object.assign(new Error(), { name: 'InvalidStateError' });
+    }
+    applied.push(row.candidate);
+  } };
+  f.peer.startPolling(signal => f.peer.pollCandidates('host', signal));
+  await f.tick();
+  await f.tick();
+  assert.deepEqual(cursors, [0, 1]);
+  assert.deepEqual(applied, ['a', 'b']);
+  assert.equal(f.peer.candidateCursor, 3);
+});
+
+test('ICE connected keeps polling until the channel opens, ICE failed closes the peer once', async () => {
+  let closes = 0;
+  const f = fixture({ RTCPeerConnection: class {
+    close() { closes++; }
+  } });
+  f.peer.role = 'joiner';
+  await f.peer.start();
+  const pc = f.peer.pc;
+  pc.iceConnectionState = 'connected';
+  pc.oniceconnectionstatechange();
+  assert.equal(f.delay, 2500);
+  pc.iceConnectionState = 'failed';
+  pc.oniceconnectionstatechange();
+  assert.equal(f.errors.length, 1);
+  assert.equal(closes, 1);
+  assert.equal(f.peer.pc, null);
   assert.equal(f.delay, undefined);
 });

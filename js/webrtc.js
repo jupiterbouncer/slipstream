@@ -37,6 +37,8 @@ class SlipstreamPeer {
     this.pollController = null;
     this.isClosed = false;
     this.processedCandidates = new Set();
+    this.pendingCandidates = [];
+    this.disconnectTimer = null;
     this.candidateCursor = 0;
     this.receiveQueue = Promise.resolve();
 
@@ -56,29 +58,30 @@ class SlipstreamPeer {
     try {
       this.pc = new RTCPeerConnection(this.rtcConfig);
 
-      this.pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          Api.sendIceCandidate(this.code, this.role, event.candidate.toJSON()).catch((err) => {
-            console.warn('Failed to send ICE candidate:', err);
-          });
+      this.pc.onicecandidate = ({ candidate }) => {
+        if (candidate && !this.isClosed && !this.isChannelOpen()) {
+          this.pendingCandidates.push(candidate.toJSON());
         }
       };
-
-      this.pc.onconnectionstatechange = () => {
-        const state = this.pc ? this.pc.connectionState : 'closed';
-        this.onStatusChange(`Connection: ${state}`);
-        if (state === 'connected') {
-          this.stopPolling();
-        } else if (state === 'failed' || state === 'disconnected') {
-          this.stopPolling();
-          this.onError(new Error(`WebRTC peer connection state is ${state}`));
-        }
-      };
-
+      this.pc.onicecandidateerror = event => this.log('ICE gathering error', { code: event.errorCode });
+      this.pc.onicegatheringstatechange = () => this.log('ICE gathering', { state: this.pc.iceGatheringState });
+      this.pc.onsignalingstatechange = () => this.log('signaling', { state: this.pc.signalingState });
       this.pc.oniceconnectionstatechange = () => {
-        const state = this.pc ? this.pc.iceConnectionState : 'closed';
-        if (state === 'connected' || state === 'completed') {
-          this.stopPolling();
+        this.log('ICE connection', { state: this.pc.iceConnectionState });
+        if (this.pc.iceConnectionState === 'failed') this.connectionFailed();
+      };
+      this.pc.onconnectionstatechange = () => {
+        const state = this.pc.connectionState;
+        this.log('peer connection', { state });
+        if (state === 'failed') return this.connectionFailed();
+        if (state === 'disconnected') {
+          this.disconnectTimer ??= setTimeout(() => this.connectionFailed(), 10000);
+          return;
+        }
+        clearTimeout(this.disconnectTimer);
+        this.disconnectTimer = null;
+        if (!this.isChannelOpen() && (state === 'connecting' || state === 'connected')) {
+          this.onStatusChange('Establishing secure connection…');
         }
       };
 
@@ -89,8 +92,7 @@ class SlipstreamPeer {
       }
     } catch (err) {
       if (this.isClosed) return;
-      this.onError(err);
-      this.close();
+      this.connectionFailed(err);
     }
   }
 
@@ -98,26 +100,24 @@ class SlipstreamPeer {
    * Host initializes data channel and creates SDP offer.
    */
   async initHost() {
-    this.onStatusChange('Creating direct data channel...');
+    this.onStatusChange('Connecting to device…');
     this.dataChannel = this.pc.createDataChannel('slipstream-transfer', {
       ordered: true,
     });
     this.setupDataChannel(this.dataChannel);
 
-    this.onStatusChange('Creating connection offer...');
     const offer = await this.pc.createOffer();
     if (this.isClosed) return;
     await this.pc.setLocalDescription(offer);
     if (this.isClosed) return;
 
-    this.onStatusChange('Submitting offer to signaling service...');
     await Api.sendOffer(this.code, {
       sdp: offer.sdp,
       type: offer.type,
     });
 
     if (this.isClosed) return;
-    this.onStatusChange('Waiting for peer to join...');
+    this.onStatusChange('Waiting for the other device…');
     this.startHostPolling();
   }
 
@@ -125,7 +125,7 @@ class SlipstreamPeer {
    * Joiner waits for offer, applies it, and creates SDP answer.
    */
   async initJoiner() {
-    this.onStatusChange('Waiting for connection offer from host...');
+    this.onStatusChange('Connecting to device…');
 
     this.pc.ondatachannel = (event) => {
       this.dataChannel = event.channel;
@@ -144,7 +144,7 @@ class SlipstreamPeer {
         const answer = await Api.getAnswer(this.code, signal);
         if (signal.aborted || !answer) return;
         await this.pc.setRemoteDescription(answer);
-        if (!signal.aborted) this.onStatusChange('Received answer. Connecting directly...');
+        if (!signal.aborted) this.onStatusChange('Establishing secure connection…');
       }
       if (!signal.aborted) await this.pollCandidates('joiner', signal);
     });
@@ -168,7 +168,7 @@ class SlipstreamPeer {
         // Retry a transient POST failure with the same negotiated answer.
         await Api.sendAnswer(this.code, pendingAnswer, signal);
         pendingAnswer = null;
-        if (!signal.aborted) this.onStatusChange('Answer submitted. Connecting...');
+        if (!signal.aborted) this.onStatusChange('Establishing secure connection…');
       }
       if (!signal.aborted) await this.pollCandidates('host', signal);
     });
@@ -181,15 +181,22 @@ class SlipstreamPeer {
     let failures = 0;
     const poll = async () => {
       try {
+        // Remove only acknowledged candidates. A transient POST failure retries
+        // through the same bounded poll scheduler. Receivers deduplicate replays.
+        while (this.pendingCandidates.length && !signal.aborted) {
+          await Api.sendIceCandidate(this.code, this.role, this.pendingCandidates[0], signal);
+          if (signal.aborted) return;
+          this.pendingCandidates.shift();
+        }
+        if (signal.aborted) return;
         await step(signal);
         failures = 0;
       } catch (err) {
         if (signal.aborted) return;
         failures++;
-        const transient = err instanceof TypeError || err.status === 408 || err.status >= 500;
+        const transient = err instanceof TypeError || err.name === 'InvalidStateError' || err.status === 408 || err.status >= 500;
         if (!transient || failures >= 5) {
-          this.close();
-          this.onError(err);
+          this.connectionFailed(err);
           return;
         }
       }
@@ -210,16 +217,18 @@ class SlipstreamPeer {
     const candidates = await Api.getIceCandidates(this.code, peerRole, this.candidateCursor, signal);
     for (const c of candidates) {
       if (signal.aborted) return;
-      this.candidateCursor++;
       const candidateKey = JSON.stringify(c);
       if (!this.processedCandidates.has(candidateKey)) {
-        this.processedCandidates.add(candidateKey);
         try {
           await this.pc.addIceCandidate(new RTCIceCandidate(c));
         } catch (candidateErr) {
-          console.warn('Could not add ICE candidate:', candidateErr);
+          if (signal.aborted) return;
+          this.log('remote ICE candidate rejected', { reason: candidateErr.name, index: this.candidateCursor });
+          if (candidateErr.name === 'InvalidStateError') throw candidateErr;
         }
+        this.processedCandidates.add(candidateKey);
       }
+      this.candidateCursor++;
     }
   }
 
@@ -230,7 +239,8 @@ class SlipstreamPeer {
     channel.binaryType = 'arraybuffer';
 
     channel.onopen = () => {
-      this.onStatusChange('Data channel open. Direct peer connection active.');
+      this.logCandidatePairs();
+      this.onStatusChange('Connected');
       this.stopPolling();
       this.onChannelOpen(channel);
     };
@@ -242,13 +252,12 @@ class SlipstreamPeer {
 
     channel.onclose = () => {
       this.stopPolling();
-      this.onStatusChange('Data channel closed.');
+      this.log('data channel closed');
       this.onChannelClose();
     };
 
     channel.onerror = (err) => {
-      console.error('Data channel error:', err);
-      this.onError(err);
+      this.connectionFailed(err.error);
     };
   }
 
@@ -345,6 +354,39 @@ class SlipstreamPeer {
     return this.dataChannel ? this.dataChannel.bufferedAmountLowThreshold : 0;
   }
 
+  log(event, details = {}) {
+    console.debug('[Slipstream WebRTC]', this.role, event, details);
+  }
+
+  logCandidatePairs() {
+    const pc = this.pc;
+    if (!pc?.getStats) return;
+    pc.getStats().then(report => {
+      const pairs = [];
+      report.forEach(row => {
+        if (row.type === 'candidate-pair') pairs.push({
+          state: row.state, nominated: !!row.nominated,
+          local: report.get(row.localCandidateId)?.candidateType,
+          remote: report.get(row.remoteCandidateId)?.candidateType,
+        });
+      });
+      this.log('ICE candidate pairs', { pairs });
+    }).catch(() => this.log('ICE statistics unavailable'));
+  }
+
+  connectionFailed(error) {
+    if (this.isClosed) return;
+    this.logCandidatePairs();
+    this.log('connection failed', {
+      error: error?.name, status: error?.status, ice: this.pc?.iceConnectionState,
+      signaling: this.pc?.signalingState, remoteCandidatesRead: this.candidateCursor,
+      localCandidatesPending: this.pendingCandidates.length,
+    });
+    this.onStatusChange("Couldn't connect to device");
+    this.close();
+    this.onError(error || new Error("Couldn't connect to device"));
+  }
+
   stopPolling() {
     clearTimeout(this.pollTimer);
     this.pollTimer = null;
@@ -357,6 +399,7 @@ class SlipstreamPeer {
    */
   close() {
     this.isClosed = true;
+    clearTimeout(this.disconnectTimer);
     this.stopPolling();
     this.receiveQueue = Promise.resolve();
 
@@ -376,11 +419,16 @@ class SlipstreamPeer {
         this.pc.onconnectionstatechange = null;
         this.pc.oniceconnectionstatechange = null;
         this.pc.onicecandidate = null;
+        this.pc.ondatachannel = null;
+        this.pc.onicecandidateerror = null;
+        this.pc.onicegatheringstatechange = null;
+        this.pc.onsignalingstatechange = null;
         this.pc.close();
       } catch {}
       this.pc = null;
     }
 
+    this.pendingCandidates.length = 0;
     this.processedCandidates.clear();
   }
 }

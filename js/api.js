@@ -18,7 +18,16 @@ const Api = (() => {
 
     options.headers = { ...defaultHeaders, ...options.headers };
 
-    const res = await fetch(url, options);
+    // Log only the resource name. URLs contain pairing codes and bodies can contain SDP.
+    const resource = url.split('?')[0].split('/')[3] || 'session';
+    const diagnostic = { method: options.method, resource };
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (error) {
+      if (!options.signal?.aborted) console.warn('[Slipstream signaling]', { ...diagnostic, reason: 'network' });
+      throw error;
+    }
 
     if (res.status === 204) {
       return null;
@@ -26,17 +35,25 @@ const Api = (() => {
 
     const isJson = res.headers.get('content-type')?.includes('application/json');
     if (!isJson) {
+      const challenge = /\baes\.js\b/i.test(await res.text());
+      console.warn('[Slipstream signaling]', { ...diagnostic, status: res.status, reason: challenge ? 'browser challenge' : 'non-JSON response' });
       const err = new Error('The signaling service returned a web page. Open the site in this browser and check the session route.');
       err.status = res.status;
       throw err;
     }
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      console.warn('[Slipstream signaling]', { ...diagnostic, status: res.status, reason: 'invalid JSON' });
+      throw new Error('The signaling service returned an unreadable response.');
+    }
 
     if (!res.ok) {
+      console.warn('[Slipstream signaling]', { ...diagnostic, status: res.status });
       const errorMsg = data?.error || data?.message || `Request failed with status ${res.status}`;
       const err = new Error(errorMsg);
       err.status = res.status;
-      err.data = data;
       throw err;
     }
 
@@ -113,10 +130,11 @@ const Api = (() => {
      * Submit an ICE candidate (POST /sessions/{code}/ice-candidates)
      * role: 'host' | 'joiner' (who is submitting)
      */
-    async sendIceCandidate(code, role, candidate) {
+    async sendIceCandidate(code, role, candidate, signal) {
       return await request(`${BASE_URL}/${encodeURIComponent(code)}/ice-candidates`, {
         method: 'POST',
         body: JSON.stringify({ role, candidate }),
+        signal,
       });
     },
 

@@ -299,6 +299,9 @@ if ($subResource === 'ice-candidates') {
             JSON_ARRAY_APPEND(COALESCE({$column}, JSON_ARRAY()), '$', JSON_EXTRACT(:candidate, '$'))
             WHERE code = :code AND expires_at > NOW()");
         $stmt->execute([':candidate' => json_encode($candidate), ':code' => $code]);
+        if ($stmt->rowCount() !== 1) {
+            sendJson(404, ['error' => 'Session not found or expired']);
+        }
 
         sendJson(200, ['status' => 'ok']);
     }
