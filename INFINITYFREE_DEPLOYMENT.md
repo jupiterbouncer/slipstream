@@ -21,7 +21,7 @@ Run from the repository root with PHP CLI:
 php deploy/package-infinityfree.php
 ```
 
-The command prints a fresh `build/infinityfree/<release>/htdocs` path. Each run copies an explicit list. The output should contain exactly these 16 files:
+The command prints a fresh `build/infinityfree/<release>/htdocs` path. Each run copies an explicit list. The output should contain these files:
 
 ```text
 htdocs/
@@ -35,6 +35,12 @@ htdocs/
     transfer-protocol.js
     file-sender.js
     file-receiver.js
+    application-messages.js
+    session.js
+    file-queue.js
+    file-viewer.js
+    file-requests.js
+    share-text.js
     app.js
     ui-motion.js
     vendor/qrcode.min.js

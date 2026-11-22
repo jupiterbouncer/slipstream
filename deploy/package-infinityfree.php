@@ -11,6 +11,9 @@ $root = dirname(__DIR__);
 $target = $root . '/build/infinityfree/' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(3)) . '/htdocs';
 $assets = [
     '.htaccess', 'index.html', 'slipstream-favicon.svg', 'css/style.css',
+    'js/file-requests.js',
+    'js/file-queue.js', 'js/file-viewer.js', 'js/share-text.js',
+    'js/session.js', 'js/application-messages.js',
     'js/api.js', 'js/webrtc.js', 'js/transfer-protocol.js', 'js/file-sender.js',
     'js/file-receiver.js', 'js/app.js', 'js/ui-motion.js', 'js/vendor/qrcode.min.js',
     'api/db.php', 'api/sessions.php', 'config/.htaccess', 'config/config.php',

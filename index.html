@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="slipstream-favicon.svg">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="css/style.css?v=20261122">
+  <link rel="stylesheet" href="css/style.css?v=sharing3">
 </head>
 <body>
   <!-- Ambient background pattern -->
@@ -112,11 +112,17 @@
 
           <div class="waiting-indicator">
             <div class="pulse-dot" aria-hidden="true"></div>
-            <span id="host-status-msg">Waiting for peer device to connect...</span>
+            <span id="host-status-msg" role="status">Waiting for peer device to connect...</span>
           </div>
 
           <span class="expiry-text" id="host-expiry-text">Code expires in 10 minutes</span>
 
+          <div class="session-actions">
+            <button class="btn btn-secondary" id="copy-code" disabled>Copy code</button>
+            <button class="btn btn-secondary" id="copy-link" disabled>Copy link</button>
+            <button class="btn btn-secondary" id="new-code" disabled>New code</button>
+          </div>
+          <p id="pairing-feedback" role="status"></p>
           <button type="button" class="btn btn-ghost" id="btn-cancel-host">Cancel</button>
         </div>
       </section>
@@ -189,34 +195,17 @@
 
           <!-- File Selection Area (Phase 2 Preview & Dropzone) -->
           <div id="sender-file-section" style="margin-top: 1rem; display: none;">
-            <div class="dropzone" id="file-dropzone" role="button" tabindex="0" aria-label="Choose a file or tap to browse">
+            <div class="dropzone" id="file-dropzone" role="button" tabindex="0" aria-label="Choose files to queue">
               <span class="drop-demo" aria-hidden="true">
                 <span class="demo-surface"></span>
                 <span class="demo-tray"></span>
                 <span class="paper-icon"></span>
               </span>
-              <p class="dropzone-title">Drop a file here</p>
-              <p class="dropzone-subtitle">Or choose one from your device.</p>
+              <p class="dropzone-title">Drop files here</p>
+              <p class="dropzone-subtitle">Or choose files from your device.</p>
               <span class="btn btn-secondary dropzone-btn" aria-hidden="true">Browse files</span>
-              <input type="file" id="file-input" style="display: none;">
             </div>
-
-            <!-- File preview card matching reference screen 3 -->
-            <div class="file-preview-card" id="file-preview" style="display: none;">
-              <span class="file-pieces" aria-hidden="true">
-                <span class="paper-icon"></span><i></i><i></i><i></i>
-              </span>
-              <div class="file-info">
-                <p class="file-name" id="preview-filename">document.pdf</p>
-                <p class="file-meta"><span id="preview-filesize"></span><span id="preview-filetype"></span></p>
-              </div>
-              <button type="button" class="file-remove-btn" id="btn-remove-file" aria-label="Remove selected file">✕</button>
-            </div>
-
-            <div id="file-actions" style="display: none; flex-direction: column; align-items: center; gap: 8px;">
-              <button type="button" class="btn btn-primary" id="btn-send-file" style="padding: 12px 32px;">Send file</button>
-              <button type="button" class="btn btn-ghost" id="btn-change-file" style="text-decoration: underline;">Choose a different file</button>
-            </div>
+            <input type="file" id="file-input" multiple hidden>
           </div>
 
           <!-- Receiver File Section (Phase 2 Incoming-File Preview & Acceptance) -->
@@ -288,14 +277,65 @@
           </div>
 
           <!-- Phase 1 Data Channel Proof & Verification Test Box -->
+          <section id="verified-files" class="session-tools" hidden>
+            <h3>Verified files</h3><ul class="file-list"></ul>
+          </section>
+          <div id="session-tools" class="session-tools" hidden>
+            <section aria-label="File requests">
+              <button id="request-file" class="btn btn-secondary" hidden>Request file</button>
+              <div id="request-choice" hidden>
+                <p>Your peer is requesting a file.</p>
+                <button id="approve-request" class="btn btn-primary">Choose a file to offer</button>
+                <button id="decline-request" class="btn btn-secondary">Decline request</button>
+              </div>
+              <input type="file" id="request-picker" hidden>
+              <p id="request-status" role="status"></p>
+            </section>
+            <section id="queue-panel" hidden>
+              <h3>Pending files</h3>
+              <ol id="queue-list" class="file-list"></ol>
+              <div class="session-actions">
+                <button id="btn-send-file" class="btn btn-primary">Send queue</button>
+                <button id="clear-queue" class="btn btn-secondary">Clear pending</button>
+              </div>
+              <p id="queue-feedback" role="status"></p>
+            </section>
+            <details id="share-panel">
+              <summary>Share text or a link</summary>
+              <label for="share-text">Text, link or code (8 KiB max)</label>
+              <textarea id="share-text" rows="3" maxlength="8192"></textarea>
+              <div class="session-actions">
+                <button class="btn btn-secondary" id="paste-text">Paste</button>
+                <button class="btn btn-primary" id="send-text">Send text</button>
+              </div>
+              <p id="share-feedback" role="status"></p>
+              <div id="received-text"></div>
+            </details>
+            <details id="activity-panel">
+              <summary>Session activity &amp; statistics</summary>
+              <p id="session-stats"></p>
+              <ol id="activity-list" aria-label="Session activity"></ol>
+              <button class="btn btn-secondary" id="clear-activity">Clear activity</button>
+            </details>
+            <details id="nickname-connection">
+              <summary>Connection</summary>
+              <label for="nickname">Your device name</label>
+              <div class="session-actions"><input id="nickname" maxlength="32" autocomplete="off">
+                <button id="save-name" class="btn btn-secondary">Save name</button>
+              </div>
+              <p id="name-feedback" role="status"></p>
+              <button class="btn btn-secondary" data-modal="modal-help">Connection diagnostics</button>
+              <button id="end-session" class="btn btn-ghost">End session</button>
+            </details>
+          </div>
           <div class="phase-test-box" id="phase-chat" hidden>
             <h4>Phase 1 Data Channel Verification</h4>
             <p style="font-size: 0.8rem; color: var(--color-steel); margin-bottom: 0.5rem;">
               Send an instant text message directly through the WebRTC data channel to verify zero-server peer transmission:
             </p>
-            <div class="chat-log" id="test-chat-log">Data channel ready.</div>
+            <div class="chat-log" id="test-chat-log" role="log" aria-label="Peer chat">Data channel ready.</div>
             <div style="display: flex; gap: 0.5rem;">
-              <input type="text" id="test-message-input" disabled placeholder="Type a message..." style="flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-mist); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none;">
+              <input type="text" id="test-message-input" aria-label="Chat message" disabled placeholder="Type a message..." style="flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-mist); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none;">
               <button type="button" class="btn btn-secondary" id="btn-send-test-msg" disabled style="padding: 0.5rem 1rem; font-size: 0.85rem;">Send</button>
             </div>
           </div>
@@ -312,7 +352,7 @@
           <!-- State Pill Badge (§8, §9) -->
           <div class="transfer-state-pill" id="transfer-state-pill">
             <span class="pill-dot" aria-hidden="true"></span>
-            <span id="transfer-state-text">Transferring</span>
+            <span id="transfer-state-text" role="status">Transferring</span>
           </div>
 
           <h2 id="transfer-heading" class="hero-title" style="font-size: 24px;">Transferring file...</h2>
@@ -402,24 +442,24 @@
 
     <!-- Modals (§8) -->
     <!-- How it works modal -->
-    <div class="modal-overlay" id="modal-how" role="dialog" aria-modal="true" aria-labelledby="modal-how-title">
+    <dialog class="modal-overlay" id="modal-how" aria-labelledby="modal-how-title">
       <div class="modal-card">
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-how-title">How Slipstream works</h2>
         <div class="modal-content" style="margin-top: 1rem;">
           <p>Slipstream is engineered for direct peer-to-peer file transfer between devices on the same local network without cloud storage:</p>
           <ul>
-            <li><strong>Session Creation:</strong> The sender generates a temporary 6-digit code and QR code.</li>
+            <li><strong>Session Creation:</strong> The sender generates a temporary 6-character code and QR code.</li>
             <li><strong>Signaling Only:</strong> The lightweight PHP/MySQL backend coordinates WebRTC connection metadata (SDP offer/answer and ICE candidates).</li>
             <li><strong>Direct Data Channel:</strong> Once connected, browsers communicate directly over an <code>RTCDataChannel</code> with DTLS encryption.</li>
             <li><strong>Zero Server Storage:</strong> Your file bytes never touch the server or any third-party cloud.</li>
           </ul>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- Privacy & Security modal -->
-    <div class="modal-overlay" id="modal-privacy" role="dialog" aria-modal="true" aria-labelledby="modal-privacy-title">
+    <dialog class="modal-overlay" id="modal-privacy" aria-labelledby="modal-privacy-title">
       <div class="modal-card">
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-privacy-title">Privacy & Security</h2>
@@ -433,26 +473,33 @@
           </ul>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- Help & Diagnostics modal -->
-    <div class="modal-overlay" id="modal-help" role="dialog" aria-modal="true" aria-labelledby="modal-help-title">
+    <dialog class="modal-overlay" id="modal-help" aria-labelledby="modal-help-title">
       <div class="modal-card">
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-help-title">Connection Diagnostics & Help</h2>
         <div class="modal-content" style="margin-top: 1rem;">
-          <p><strong>Troubleshooting WebRTC Connections:</strong></p>
+          <h3>Why is my file still waiting?</h3>
+          <p>Each file needs a separate acceptance. The next offer follows verification, rejection or cancellation. After a failure, review the pending queue and select Send queue to retry the remaining files.</p>
+          <h3>Where are my downloads?</h3>
+          <p>Open Verified files to preview or download a completed file. Save anything you need before ending the session.</p>
+          <h3>Why can’t I paste or connect?</h3>
+          <p>If clipboard permission is denied, paste into Share text manually. Pairing requires both browsers to stay open.</p>
           <ul>
             <li>Ensure both devices are connected to the same Wi-Fi or local network.</li>
             <li>Check that your firewall or router allows local UDP traffic.</li>
             <li>If accessing from a mobile device over a LAN IP address, modern browsers require HTTPS to enable secure context features like camera QR scanning.</li>
             <li>Pairing codes expire after 10 minutes; if expired, create a fresh session on the sender device.</li>
           </ul>
+          <p id="connection-summary"></p>
+          <details id="technical-details"><summary>Technical details</summary><dl id="connection-details"></dl></details>
           <button type="button" class="btn btn-secondary" id="btn-download-diagnostics">Download connection report</button>
           <p id="diagnostics-status" role="status"></p>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- Footer (§8) -->
     <footer class="app-footer">
@@ -463,16 +510,27 @@
       </div>
     </footer>
   </div>
+  <dialog id="file-viewer" aria-labelledby="viewer-title">
+    <h2 id="viewer-title">File preview</h2>
+    <form method="dialog"><button class="btn btn-secondary" autofocus>Close preview</button></form>
+    <div class="preview-content"></div>
+  </dialog>
   <div class="ui-toast" id="ui-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Scripts: Vendor QR, API client, WebRTC manager, Phase 2 engines, App logic (§7.4) -->
   <script src="js/vendor/qrcode.min.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/webrtc.js?v=20261122"></script>
+  <script src="js/api.js?v=sharing3"></script>
+  <script src="js/application-messages.js"></script>
+  <script src="js/session.js"></script>
+  <script src="js/webrtc.js?v=sharing3"></script>
   <script src="js/transfer-protocol.js"></script>
   <script src="js/file-sender.js"></script>
   <script src="js/file-receiver.js"></script>
-  <script src="js/app.js?v=20261122"></script>
-  <script src="js/ui-motion.js"></script>
+  <script src="js/file-requests.js"></script>
+  <script src="js/file-queue.js"></script>
+  <script src="js/file-viewer.js"></script>
+  <script src="js/share-text.js"></script>
+  <script src="js/app.js?v=sharing3"></script>
+  <script src="js/ui-motion.js?v=sharing3"></script>
 </body>
 </html>

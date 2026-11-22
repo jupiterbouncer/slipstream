@@ -110,6 +110,8 @@ test('remote cursor resumes at the first unapplied candidate and skips duplicate
   await f.tick();
   assert.deepEqual(cursors, [0, 1]);
   assert.deepEqual(applied, ['a', 'b']);
+  assert.equal(f.peer.snapshot().applied, 2);
+  assert.equal(f.peer.snapshot().applyFailures, 1);
   assert.equal(f.peer.candidateCursor, 3);
 });
 
@@ -158,6 +160,8 @@ test('late stats from a closed peer cannot overwrite a new attempt report', asyn
   f.peer.pc = { getStats: () => new Promise(resolve => { complete = resolve; }), close() {} };
   f.peer.logCandidatePairs();
   f.peer.close();
+  assert.ok(f.peer.constructor.diagnostics.some(e => e.event === 'ICE statistics interrupted by closure'));
+  assert.equal(f.peer.constructor.lastSnapshot.channelOpen, false);
   const next = new f.peer.constructor({ role: 'host' });
   next.log('new attempt');
   complete(new Map());

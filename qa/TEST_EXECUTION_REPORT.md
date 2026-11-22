@@ -104,3 +104,17 @@ During QA verification of the Phase 2 integration baseline, the following defect
 **QA Verdict:** **APPROVED FOR PHASE 2 INTEGRATION & DEMO.**
 
 The protocol implementation is resilient, adheres strictly to `PHASE2_PROTOCOL.md`, enforces memory safety and cryptographic verification, and protects against XSS and corrupted streams.
+
+## Phase 3 browser and regression checks — 2026-11-22
+
+The Phase 3 run used two headless Chrome profiles on one Windows computer, local PHP/MySQL signaling and a real ordered WebRTC data channel.
+
+| Check | Result |
+| --- | --- |
+| Node transfer, signaling and sharing suites | 40 passed. Includes delayed verification acknowledgment, sequential offers, cancellation, rejected offers, corrupted bytes, auxiliary validation and preview formats. |
+| Browser transfer | A 1,048,577-byte file passed SHA-256 verification and the downloaded bytes matched the original. |
+| Sharing workflows | Temporary names, literal text, HTTP(S) link action, denied clipboard read, request approval and decline, per-file consent, retained downloads, preview URL revocation and clearable activity passed. |
+| Responsive and keyboard checks | At 320, 360, 375, 390, 430, 768 and 1280 CSS pixels both sharing interfaces fit the viewport. Dialog focus, Escape restoration, reduced motion and active-session cancellation confirmation passed. |
+| InfinityFree package | All 15 referenced JavaScript and CSS assets matched the source files by hash. |
+
+Physical laptop-to-iPhone pairing, mobile browser clipboard prompts, native PDF viewing on each OS and assistive-technology testing on an actual device remain unverified for Phase 3.

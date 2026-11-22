@@ -164,8 +164,9 @@ const Api = (() => {
           method: 'POST',
           body: '{}',
         });
+        return true;
       } catch (err) {
-        console.warn('Could not delete session:', err);
+        return err.status === 404 || err.status === 410;
       }
     },
   };
