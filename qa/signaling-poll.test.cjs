@@ -131,3 +131,37 @@ test('ICE connected keeps polling until the channel opens, ICE failed closes the
   assert.equal(f.peer.pc, null);
   assert.equal(f.delay, undefined);
 });
+
+test('connection report retains sanitized candidate checks after close', async () => {
+  const f = fixture();
+  const report = new Map([
+    ['local', { type: 'local-candidate', candidateType: 'host', protocol: 'udp', address: 'private-address' }],
+    ['remote', { type: 'remote-candidate', candidateType: 'srflx', protocol: 'udp', address: 'public-address' }],
+    ['pair', { type: 'candidate-pair', localCandidateId: 'local', remoteCandidateId: 'remote',
+      state: 'in-progress', requestsSent: 12, responsesReceived: 0 }],
+  ]);
+  f.peer.pc = { getStats: async () => report, close() {} };
+  f.peer.logCandidatePairs();
+  await new Promise(resolve => setImmediate(resolve));
+  f.peer.close();
+  const entries = f.peer.constructor.diagnostics;
+  const snapshot = entries.find(entry => entry.event === 'ICE candidate pairs');
+  assert.equal(snapshot.pairs[0].requestsSent, 12);
+  assert.equal(snapshot.pairs[0].responsesReceived, 0);
+  assert.equal(snapshot.candidates.length, 2);
+  assert.ok(!JSON.stringify(entries).includes('address'));
+});
+
+test('late stats from a closed peer cannot overwrite a new attempt report', async () => {
+  const f = fixture();
+  let complete;
+  f.peer.pc = { getStats: () => new Promise(resolve => { complete = resolve; }), close() {} };
+  f.peer.logCandidatePairs();
+  f.peer.close();
+  const next = new f.peer.constructor({ role: 'host' });
+  next.log('new attempt');
+  complete(new Map());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(next.constructor.diagnostics.length, 1);
+  assert.equal(next.constructor.diagnostics[0].event, 'new attempt');
+});

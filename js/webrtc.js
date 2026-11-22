@@ -8,6 +8,8 @@
 const SIGNALING_POLL_MS = 2500;
 
 class SlipstreamPeer {
+  static diagnostics = [];
+
   constructor({
     role,
     code,
@@ -41,6 +43,7 @@ class SlipstreamPeer {
     this.disconnectTimer = null;
     this.candidateCursor = 0;
     this.receiveQueue = Promise.resolve();
+    SlipstreamPeer.diagnostics = [];
 
     // Standard STUN configuration for local candidate discovery
     this.rtcConfig = {
@@ -68,6 +71,7 @@ class SlipstreamPeer {
       this.pc.onsignalingstatechange = () => this.log('signaling', { state: this.pc.signalingState });
       this.pc.oniceconnectionstatechange = () => {
         this.log('ICE connection', { state: this.pc.iceConnectionState });
+        this.logCandidatePairs();
         if (this.pc.iceConnectionState === 'failed') this.connectionFailed();
       };
       this.pc.onconnectionstatechange = () => {
@@ -100,7 +104,7 @@ class SlipstreamPeer {
    * Host initializes data channel and creates SDP offer.
    */
   async initHost() {
-    this.onStatusChange('Connecting to device…');
+    this.onStatusChange('Preparing connection…');
     this.dataChannel = this.pc.createDataChannel('slipstream-transfer', {
       ordered: true,
     });
@@ -125,7 +129,7 @@ class SlipstreamPeer {
    * Joiner waits for offer, applies it, and creates SDP answer.
    */
   async initJoiner() {
-    this.onStatusChange('Connecting to device…');
+    this.onStatusChange('Waiting for connection details…');
 
     this.pc.ondatachannel = (event) => {
       this.dataChannel = event.channel;
@@ -143,6 +147,7 @@ class SlipstreamPeer {
       if (!this.pc.remoteDescription) {
         const answer = await Api.getAnswer(this.code, signal);
         if (signal.aborted || !answer) return;
+        this.onStatusChange('Exchanging connection details…');
         await this.pc.setRemoteDescription(answer);
         if (!signal.aborted) this.onStatusChange('Establishing secure connection…');
       }
@@ -156,6 +161,7 @@ class SlipstreamPeer {
       if (!this.pc.remoteDescription) {
         const offer = await Api.getOffer(this.code, signal);
         if (signal.aborted || !offer) return;
+        this.onStatusChange('Exchanging connection details…');
         await this.pc.setRemoteDescription(offer);
         if (signal.aborted) return;
         const answer = await this.pc.createAnswer();
@@ -187,9 +193,11 @@ class SlipstreamPeer {
           await Api.sendIceCandidate(this.code, this.role, this.pendingCandidates[0], signal);
           if (signal.aborted) return;
           this.pendingCandidates.shift();
+          this.log('local ICE candidate acknowledged');
         }
         if (signal.aborted) return;
         await step(signal);
+        if (!signal.aborted) this.logCandidatePairs();
         failures = 0;
       } catch (err) {
         if (signal.aborted) return;
@@ -221,6 +229,7 @@ class SlipstreamPeer {
       if (!this.processedCandidates.has(candidateKey)) {
         try {
           await this.pc.addIceCandidate(new RTCIceCandidate(c));
+          this.log('remote ICE candidate accepted', { index: this.candidateCursor });
         } catch (candidateErr) {
           if (signal.aborted) return;
           this.log('remote ICE candidate rejected', { reason: candidateErr.name, index: this.candidateCursor });
@@ -356,22 +365,35 @@ class SlipstreamPeer {
 
   log(event, details = {}) {
     console.debug('[Slipstream WebRTC]', this.role, event, details);
+    SlipstreamPeer.diagnostics.push({ time: new Date().toISOString(), role: this.role, event, ...details });
+    // Bound memory and retain the last attempt after its peer is closed.
+    if (SlipstreamPeer.diagnostics.length > 200) SlipstreamPeer.diagnostics.shift();
   }
 
   logCandidatePairs() {
     const pc = this.pc;
-    if (!pc?.getStats) return;
+    if (!pc?.getStats || this.statsPending) return;
+    this.statsPending = true;
     pc.getStats().then(report => {
+      if (this.pc !== pc) return;
       const pairs = [];
+      const candidates = [];
       report.forEach(row => {
+        if (row.type === 'local-candidate' || row.type === 'remote-candidate') {
+          candidates.push({ side: row.type, type: row.candidateType, protocol: row.protocol });
+        }
         if (row.type === 'candidate-pair') pairs.push({
           state: row.state, nominated: !!row.nominated,
           local: report.get(row.localCandidateId)?.candidateType,
           remote: report.get(row.remoteCandidateId)?.candidateType,
+          requestsSent: row.requestsSent, responsesReceived: row.responsesReceived,
+          requestsReceived: row.requestsReceived, responsesSent: row.responsesSent,
         });
       });
-      this.log('ICE candidate pairs', { pairs });
-    }).catch(() => this.log('ICE statistics unavailable'));
+      this.log('ICE candidate pairs', { candidates, pairs });
+    }).catch(() => {
+      if (this.pc === pc) this.log('ICE statistics unavailable');
+    }).finally(() => { this.statsPending = false; });
   }
 
   connectionFailed(error) {

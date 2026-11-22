@@ -737,12 +737,11 @@ h1, h2, h3 {
   position: absolute;
   left: 0;
   top: 0;
-  height: 100% !important; /* app.js writes both axes; keep the cross axis full. */
+  height: 100%;
   width: var(--trail-progress, 0%);
   background-color: var(--color-coral);
   border-radius: 3px;
   transition: width 0.32s ease-out, height 0.32s ease-out, background-color 0.4s ease;
-  position: relative;
 }
 
 /* Coral: small coral-colored geometric marker (Requirement A) */
@@ -1720,8 +1719,8 @@ h1, h2, h3 {
   }
 
   .trail-fill {
-    width: 100% !important;
-    height: var(--trail-progress, 0%) !important;
+    width: 100%;
+    height: var(--trail-progress, 0%);
   }
 
   .coral-marker {

@@ -69,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const receiverWaitingBox = document.getElementById('receiver-waiting-box');
   const receiverStatusMsg = document.getElementById('receiver-status-msg');
   const testChatLog = document.getElementById('test-chat-log');
+  const chatBox = document.getElementById('phase-chat');
   const testMessageInput = document.getElementById('test-message-input');
   const btnSendTestMsg = document.getElementById('btn-send-test-msg');
   const localDeviceLabel = document.getElementById('local-device-label');
@@ -124,6 +125,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalCloseButtons = document.querySelectorAll('[data-close-modal]');
   const modalOverlays = document.querySelectorAll('.modal-overlay');
 
+  document.getElementById('btn-download-diagnostics').addEventListener('click', () => {
+    const entries = SlipstreamPeer.diagnostics;
+    const status = document.getElementById('diagnostics-status');
+    if (!entries.length) {
+      status.textContent = 'Start a pairing attempt first, then download its report here.';
+      return;
+    }
+    const blob = new Blob([JSON.stringify({ build: '20261122', entries }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'slipstream-connection.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = 'Report downloaded for the latest pairing attempt in this tab.';
+  });
+
   /**
    * Screen Management
    */
@@ -135,11 +155,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (screens[screenName]) {
       screens[screenName].classList.add('active');
     }
+    // Keep the existing conversation accessible throughout an open connection.
+    if (screenName === 'connected' || screenName === 'transfer') {
+      screens[screenName].querySelector('.connected-card').appendChild(chatBox);
+    }
   }
 
   function setHeaderConnected(isConnected) {
     const open = isConnected && !!state.peer?.isChannelOpen();
-    document.getElementById('phase-chat').hidden = !open;
+    chatBox.hidden = !open;
     testMessageInput.disabled = !open;
     btnSendTestMsg.disabled = !open;
     if (!headerStatus) return;
@@ -643,7 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       btnSubmitJoin.disabled = true;
-      btnSubmitJoin.innerHTML = 'Connecting<span class="loading-dots"><span></span><span></span><span></span></span>';
+      btnSubmitJoin.textContent = 'Checking pairing code…';
       joinErrorMsg.style.display = 'none';
 
       // Validate code with API
