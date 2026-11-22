@@ -69,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const receiverWaitingBox = document.getElementById('receiver-waiting-box');
   const receiverStatusMsg = document.getElementById('receiver-status-msg');
   const testChatLog = document.getElementById('test-chat-log');
+  const chatBox = document.getElementById('phase-chat');
   const testMessageInput = document.getElementById('test-message-input');
   const btnSendTestMsg = document.getElementById('btn-send-test-msg');
   const localDeviceLabel = document.getElementById('local-device-label');
@@ -124,21 +125,49 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalCloseButtons = document.querySelectorAll('[data-close-modal]');
   const modalOverlays = document.querySelectorAll('.modal-overlay');
 
+  document.getElementById('btn-download-diagnostics').addEventListener('click', () => {
+    const entries = SlipstreamPeer.diagnostics;
+    const status = document.getElementById('diagnostics-status');
+    if (!entries.length) {
+      status.textContent = 'Start a pairing attempt first, then download its report here.';
+      return;
+    }
+    const blob = new Blob([JSON.stringify({ build: '20261122', entries }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'slipstream-connection.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = 'Report downloaded for the latest pairing attempt in this tab.';
+  });
+
   /**
    * Screen Management
    */
   function showScreen(screenName) {
+    if (screenName === 'connected' && !state.peer?.isChannelOpen()) return;
     Object.values(screens).forEach((el) => {
       if (el) el.classList.remove('active');
     });
     if (screens[screenName]) {
       screens[screenName].classList.add('active');
     }
+    // Keep the existing conversation accessible throughout an open connection.
+    if (screenName === 'connected' || screenName === 'transfer') {
+      screens[screenName].querySelector('.connected-card').appendChild(chatBox);
+    }
   }
 
   function setHeaderConnected(isConnected) {
+    const open = isConnected && !!state.peer?.isChannelOpen();
+    chatBox.hidden = !open;
+    testMessageInput.disabled = !open;
+    btnSendTestMsg.disabled = !open;
     if (!headerStatus) return;
-    if (isConnected) {
+    if (open) {
       headerStatus.classList.add('connected');
       if (headerStatusText) headerStatusText.textContent = 'Connected';
     } else {
@@ -179,7 +208,11 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Reset application state and clean up resources (§8)
    */
-  async function resetApp() {
+  let pairingAttempt = 0;
+  function resetApp() {
+    pairingAttempt++;
+    btnSubmitJoin.disabled = false;
+    btnSubmitJoin.textContent = 'Connect to device';
     setHeaderConnected(false);
 
     // Clean up Phase 2 transfer engines & object URLs (§8)
@@ -227,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (state.code) {
-      await Api.deleteSession(state.code);
+      void Api.deleteSession(state.code);
       state.code = null;
     }
 
@@ -304,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function updateTransferUIState(stateName, details = {}) {
     state.transferState = stateName;
-    console.log(`[Phase 2 UI State] ${stateName}`, details);
+    console.debug('[Slipstream] transfer state', stateName);
 
     // Reset modifier classes on pill, trail, and device glyphs
     if (transferStatePill) {
@@ -459,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       case 'failed':
         if (transferStateText) transferStateText.textContent = 'Failed';
-        if (transferHeading) transferHeading.textContent = 'Transfer interrupted';
+        if (transferHeading) transferHeading.textContent = details.connectionTitle || 'Transfer interrupted';
         if (transferSubtext) {
           transferSubtext.textContent = (details && details.message)
             ? details.message
@@ -525,13 +558,15 @@ document.addEventListener('DOMContentLoaded', () => {
    * Host Flow (Send a file)
    */
   async function startHostFlow() {
+    const attempt = ++pairingAttempt;
+    state.role = 'host';
     try {
       showScreen('pairing');
       hostStatusMsg.textContent = 'Generating temporary session...';
       hostCodeText.textContent = '------';
 
       const session = await Api.createSession();
-      state.role = 'host';
+      if (attempt !== pairingAttempt) return Api.deleteSession(session.code);
       state.code = session.code;
 
       hostCodeText.textContent = session.code;
@@ -569,6 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
           hostStatusMsg.textContent = status;
         },
         onChannelOpen: () => {
+          if (attempt !== pairingAttempt || !state.peer?.isChannelOpen()) return;
           setHeaderConnected(true);
           localDeviceLabel.textContent = 'Host (Sender)';
           peerDeviceLabel.textContent = 'Receiver';
@@ -595,22 +631,15 @@ document.addEventListener('DOMContentLoaded', () => {
         onChannelMessage: (data) => {
           handleIncomingChannelMessage(data);
         },
-        onChannelClose: () => {
-          handleChannelClose();
-        },
-        onError: (err) => {
-          console.error('Host connection error:', err);
-          hostStatusMsg.textContent = `Error: ${err.message}`;
-          if (state.sender || state.receiver) handleChannelClose();
-          else handleTransferError(err);
-        },
+        onChannelClose: () => handleChannelClose(attempt),
+        onError: () => handleChannelClose(attempt),
       });
 
       await state.peer.start();
     } catch (err) {
-      console.error('Failed to create host session:', err);
-      alert(`Could not start session: ${err.message}`);
-      resetApp();
+      if (attempt !== pairingAttempt) return;
+      console.warn('[Slipstream] pairing setup failed', { error: err.name, status: err.status });
+      handleChannelClose(attempt);
     }
   }
 
@@ -626,6 +655,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function handleJoinSubmit(e) {
     if (e) e.preventDefault();
+    if (btnSubmitJoin.disabled) return;
+    const attempt = ++pairingAttempt;
     const code = joinCodeInput.value.trim().toUpperCase();
 
     if (!code || code.length < 4) {
@@ -636,11 +667,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       btnSubmitJoin.disabled = true;
-      btnSubmitJoin.innerHTML = 'Connecting<span class="loading-dots"><span></span><span></span><span></span></span>';
+      btnSubmitJoin.textContent = 'Checking pairing code…';
       joinErrorMsg.style.display = 'none';
 
       // Validate code with API
       const session = await Api.getSession(code);
+      if (attempt !== pairingAttempt) return;
       state.code = session.code;
 
       // Initialize WebRTC Peer Connection as Joiner
@@ -651,6 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btnSubmitJoin.textContent = status;
         },
         onChannelOpen: () => {
+          if (attempt !== pairingAttempt || !state.peer?.isChannelOpen()) return;
           btnSubmitJoin.disabled = false;
           btnSubmitJoin.textContent = 'Connect to device';
           setHeaderConnected(true);
@@ -681,22 +714,13 @@ document.addEventListener('DOMContentLoaded', () => {
         onChannelMessage: (data) => {
           handleIncomingChannelMessage(data);
         },
-        onChannelClose: () => {
-          handleChannelClose();
-        },
-        onError: (err) => {
-          console.error('Joiner connection error:', err);
-          btnSubmitJoin.disabled = false;
-          btnSubmitJoin.textContent = 'Connect to device';
-          joinErrorMsg.textContent = `Connection error: ${err.message}`;
-          joinErrorMsg.style.display = 'block';
-          if (state.sender || state.receiver) handleChannelClose();
-          else handleTransferError(err);
-        },
+        onChannelClose: () => handleChannelClose(attempt),
+        onError: () => handleChannelClose(attempt),
       });
 
       await state.peer.start();
     } catch (err) {
+      if (attempt !== pairingAttempt) return;
       btnSubmitJoin.disabled = false;
       btnSubmitJoin.textContent = 'Connect to device';
       joinErrorMsg.textContent = err.message || 'Invalid or expired pairing code.';
@@ -736,14 +760,39 @@ document.addEventListener('DOMContentLoaded', () => {
     state.receiver?.handleBinaryChunk(buffer);
   }
 
-  function handleChannelClose() {
-    setHeaderConnected(false);
-    appendChatLog('System', 'Data channel closed by peer.');
+  function handleChannelClose(attempt) {
+    if (attempt !== pairingAttempt) return;
+    pairingAttempt++;
     const engine = state.sender || state.receiver;
+    const interrupted = !!engine?.active;
+    const completed = state.transferState === 'completed';
+    const previouslyConnected = !!engine;
+    state.peer?.close();
+    state.peer = null;
+    setHeaderConnected(false);
     engine?.channelClosed();
     engine?.destroy();
     state.sender = null;
     state.receiver = null;
+    if (state.code) {
+      void Api.deleteSession(state.code);
+      state.code = null;
+    }
+    // A verified download remains usable after its peer leaves.
+    if (completed) return;
+    showScreen('transfer');
+    if (interrupted) return; // channelClosed already reported the transfer error.
+    updateTransferUIState('failed', {
+      connectionTitle: previouslyConnected ? 'Connection lost' : 'Connection failed',
+      message: previouslyConnected ? 'Pair again to reconnect.' : "Couldn't connect to device",
+    });
+  }
+
+  function retryConnection() {
+    const role = state.role;
+    resetApp();
+    if (role === 'host') startHostFlow();
+    else startJoinFlow();
   }
 
   /**
@@ -1021,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function sendTestMessage() {
     const raw = testMessageInput.value;
     const text = raw.trim();
-    if (!text || !state.peer) return;
+    if (!text || !state.peer?.isChannelOpen()) return;
 
     // Ensure outgoing message is stripped of any legacy/accidental prefixes
     const cleanText = text.replace(/^(?:(?:You|Peer|System):\s*)+/i, '').trim();
@@ -1136,6 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Transfer recovery & completion actions (§8)
   if (btnSendAnother) {
     btnSendAnother.addEventListener('click', () => {
+      if (!state.peer?.isChannelOpen()) return retryConnection();
       showScreen('connected');
       updateTransferUIState('idle');
       clearSelectedFile();
@@ -1144,6 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnRetryTransfer) {
     btnRetryTransfer.addEventListener('click', () => {
+      if (!state.peer?.isChannelOpen()) return retryConnection();
       showScreen('connected');
       updateTransferUIState('idle');
       if (state.role === 'host') clearSelectedFile();

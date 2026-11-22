@@ -9,16 +9,15 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 
-// Enable CORS for local network and dev environments
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Accept, X-Requested-With');
-
-// Handle preflight OPTIONS request
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
+// This API serves the browser on the same origin as the application.
+ini_set('display_errors', '0');
+date_default_timezone_set('UTC');
+header('Cache-Control: no-store');
+header('X-Content-Type-Options: nosniff');
+set_exception_handler(static function (Throwable $error): void {
+    error_log('Slipstream signaling failure: ' . get_class($error));
+    sendJson(500, ['error' => 'Signaling service unavailable']);
+});
 
 // Ensure clean JSON responses
 function sendJson(int $statusCode, array $data): void {
@@ -35,10 +34,6 @@ function sendNoContent(): void {
 
 // Extract client IP address for temporary rate limiting (§6, §7)
 function getClientIp(): string {
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        return trim($ips[0]);
-    }
     return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 }
 
@@ -70,31 +65,16 @@ function generatePairingCode(PDO $pdo, int $length = 6): string {
 $requestMethod = $_SERVER['REQUEST_METHOD'];
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/';
 
-// Normalize path: strip script name or base directory if called directly
-// e.g. /sessions, /sessions/ABCDEF, /sessions/ABCDEF/offer
-$path = $requestUri;
-if (strpos($path, '/api/sessions.php') !== false) {
-    $path = substr($path, strpos($path, '/api/sessions.php') + strlen('/api/sessions.php'));
-} elseif (strpos($path, '/sessions') !== false) {
-    $path = substr($path, strpos($path, '/sessions'));
-}
-
-// Remove trailing slash
-$path = rtrim($path, '/');
-if ($path === '') {
-    $path = '/sessions';
-}
-
-$segments = explode('/', trim($path, '/'));
-// Expect:
-// ['sessions']
-// ['sessions', '{code}']
-// ['sessions', '{code}', 'offer']
-// ['sessions', '{code}', 'answer']
-// ['sessions', '{code}', 'ice-candidates']
-
-if (empty($segments) || $segments[0] !== 'sessions') {
+$segments = explode('/', trim($requestUri, '/'));
+if ($segments[0] !== 'sessions' || count($segments) > 3) {
     sendJson(404, ['error' => 'Not Found']);
+}
+if (!in_array($requestMethod, ['GET', 'POST'], true)) {
+    header('Allow: GET, POST');
+    sendJson(405, ['error' => 'Method Not Allowed']);
+}
+if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site') {
+    sendJson(403, ['error' => 'Open Slipstream to use this endpoint']);
 }
 
 $pdo = getDbConnection();
@@ -106,7 +86,7 @@ $rawInput = file_get_contents('php://input');
 $jsonBody = [];
 if ($rawInput !== '' && $rawInput !== false) {
     $jsonBody = json_decode($rawInput, true);
-    if (!is_array($jsonBody) && in_array($requestMethod, ['POST', 'PUT', 'PATCH'], true)) {
+    if (!is_array($jsonBody) && $requestMethod === 'POST') {
         sendJson(400, ['error' => 'Invalid JSON body']);
     }
 }
@@ -115,10 +95,14 @@ if ($rawInput !== '' && $rawInput !== false) {
 // Route 1: POST /sessions (Create a new pairing session)
 // -----------------------------------------------------------------------------
 if (count($segments) === 1 && $requestMethod === 'POST') {
+    if ($jsonBody !== []) sendJson(400, ['error' => 'Session creation takes no parameters']);
     $config = require __DIR__ . '/../config/config.php';
     $expiryMinutes = $config['session']['expiry_minutes'] ?? 10;
     $codeLength = $config['session']['code_length'] ?? 6;
 
+    if (!allowSessionCreation($pdo, $clientIp, $config['rate_limit'])) {
+        sendJson(429, ['error' => 'Too many new sessions. Please wait before pairing again.']);
+    }
     $code = generatePairingCode($pdo, $codeLength);
     $expiresAtTime = time() + ($expiryMinutes * 60);
     $expiresAtSql = date('Y-m-d H:i:s', $expiresAtTime);
@@ -162,22 +146,25 @@ function getActiveSession(PDO $pdo, string $code): ?array {
     return $row ?: null;
 }
 
+function requireActiveSession(PDO $pdo, string $ip, string $code): array {
+    if (isRateLimited($pdo, $ip)) {
+        sendJson(429, ['error' => 'Too many failed code attempts. Please wait.']);
+    }
+    $session = getActiveSession($pdo, $code);
+    if (!$session) {
+        recordFailedAttempt($pdo, $ip);
+        sendJson(404, ['error' => 'Session not found or expired']);
+    }
+    return $session;
+}
+
 // -----------------------------------------------------------------------------
 // Route 2: GET /sessions/{code} (Validate session)
-// Route 3: DELETE /sessions/{code} (Clean up session)
+// Route 3: POST /sessions/{code}/delete (Clean up session)
 // -----------------------------------------------------------------------------
 if (count($segments) === 2) {
     if ($requestMethod === 'GET') {
-        if (isRateLimited($pdo, $clientIp)) {
-            sendJson(429, ['error' => 'Too many failed code validation attempts. Please wait.']);
-        }
-
-        $session = getActiveSession($pdo, $code);
-        if (!$session) {
-            recordFailedAttempt($pdo, $clientIp);
-            sendJson(404, ['error' => 'Session not found or expired']);
-        }
-
+        $session = requireActiveSession($pdo, $clientIp, $code);
         clearRateLimit($pdo, $clientIp);
         $expiresAtIso = gmdate('Y-m-d\TH:i:s\Z', strtotime($session['expires_at']));
         $createdAtIso = gmdate('Y-m-d\TH:i:s\Z', strtotime($session['created_at']));
@@ -189,37 +176,42 @@ if (count($segments) === 2) {
         ]);
     }
 
-    if ($requestMethod === 'DELETE') {
-        $stmt = $pdo->prepare('DELETE FROM sessions WHERE code = :code');
-        $stmt->execute([':code' => $code]);
-        sendNoContent();
-    }
-
     sendJson(405, ['error' => 'Method Not Allowed']);
 }
 
 $subResource = $segments[2];
+if ($subResource === 'delete') {
+    if ($requestMethod !== 'POST') {
+        header('Allow: POST');
+        sendJson(405, ['error' => 'Use POST for session cleanup']);
+    }
+    // The browser sends an empty JSON object. No generic actions or form posts.
+    $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
+    if ($contentType !== 'application/json' || !is_object(json_decode($rawInput)) || $jsonBody !== [] || $_GET) {
+        sendJson(400, ['error' => 'Expected an empty JSON object']);
+    }
+    $stmt = $pdo->prepare('DELETE FROM sessions WHERE code = :code');
+    $stmt->execute([':code' => $code]);
+    sendNoContent();
+}
 
 // -----------------------------------------------------------------------------
 // Route 4: POST /sessions/{code}/offer (Host submits SDP offer)
 // Route 5: GET /sessions/{code}/offer (Joiner polls for SDP offer)
 // -----------------------------------------------------------------------------
 if ($subResource === 'offer') {
-    $session = getActiveSession($pdo, $code);
-    if (!$session) {
-        sendJson(404, ['error' => 'Session not found or expired']);
-    }
+    $session = requireActiveSession($pdo, $clientIp, $code);
 
     if ($requestMethod === 'POST') {
         // Offer body should contain SDP
         $offer = $jsonBody['offer'] ?? $jsonBody;
-        if (empty($offer) || empty($offer['sdp']) || ($offer['type'] ?? '') !== 'offer') {
+        if (!is_string($offer['sdp'] ?? null) || $offer['sdp'] === '' || strlen($offer['sdp']) > 60000 || ($offer['type'] ?? '') !== 'offer') {
             sendJson(400, ['error' => 'Invalid SDP offer payload. Must include sdp and type="offer".']);
         }
 
         $stmt = $pdo->prepare('UPDATE sessions SET offer_sdp = :sdp WHERE code = :code');
         $stmt->execute([
-            ':sdp' => json_encode($offer, JSON_UNESCAPED_SLASHES),
+            ':sdp' => json_encode(['type' => 'offer', 'sdp' => $offer['sdp']], JSON_UNESCAPED_SLASHES),
             ':code' => $code,
         ]);
 
@@ -244,20 +236,17 @@ if ($subResource === 'offer') {
 // Route 7: GET /sessions/{code}/answer (Host polls for SDP answer)
 // -----------------------------------------------------------------------------
 if ($subResource === 'answer') {
-    $session = getActiveSession($pdo, $code);
-    if (!$session) {
-        sendJson(404, ['error' => 'Session not found or expired']);
-    }
+    $session = requireActiveSession($pdo, $clientIp, $code);
 
     if ($requestMethod === 'POST') {
         $answer = $jsonBody['answer'] ?? $jsonBody;
-        if (empty($answer) || empty($answer['sdp']) || ($answer['type'] ?? '') !== 'answer') {
+        if (!is_string($answer['sdp'] ?? null) || $answer['sdp'] === '' || strlen($answer['sdp']) > 60000 || ($answer['type'] ?? '') !== 'answer') {
             sendJson(400, ['error' => 'Invalid SDP answer payload. Must include sdp and type="answer".']);
         }
 
         $stmt = $pdo->prepare('UPDATE sessions SET answer_sdp = :sdp WHERE code = :code');
         $stmt->execute([
-            ':sdp' => json_encode($answer, JSON_UNESCAPED_SLASHES),
+            ':sdp' => json_encode(['type' => 'answer', 'sdp' => $answer['sdp']], JSON_UNESCAPED_SLASHES),
             ':code' => $code,
         ]);
 
@@ -281,10 +270,7 @@ if ($subResource === 'answer') {
 // Route 9: GET /sessions/{code}/ice-candidates?role=host|joiner (Retrieve candidates)
 // -----------------------------------------------------------------------------
 if ($subResource === 'ice-candidates') {
-    $session = getActiveSession($pdo, $code);
-    if (!$session) {
-        sendJson(404, ['error' => 'Session not found or expired']);
-    }
+    $session = requireActiveSession($pdo, $clientIp, $code);
 
     if ($requestMethod === 'POST') {
         $role = $jsonBody['role'] ?? '';
@@ -294,23 +280,28 @@ if ($subResource === 'ice-candidates') {
             sendJson(400, ['error' => 'Invalid role. Must be "host" or "joiner".']);
         }
 
-        if (empty($candidate)) {
+        if (!is_array($candidate) || !is_string($candidate['candidate'] ?? null) || strlen($candidate['candidate']) > 4096) {
             sendJson(400, ['error' => 'Missing candidate payload.']);
         }
 
         $column = $role === 'host' ? 'host_ice_candidates' : 'joiner_ice_candidates';
-        $currentList = !empty($session[$column]) ? json_decode($session[$column], true) : [];
-        if (!is_array($currentList)) {
-            $currentList = [];
+        $candidate = array_intersect_key($candidate, array_flip(['candidate', 'sdpMid', 'sdpMLineIndex', 'usernameFragment']));
+        foreach (['sdpMid', 'usernameFragment'] as $key) {
+            if (isset($candidate[$key]) && (!is_string($candidate[$key]) || strlen($candidate[$key]) > 256)) {
+                sendJson(400, ['error' => 'Invalid ICE candidate field']);
+            }
         }
-
-        $currentList[] = $candidate;
-
-        $stmt = $pdo->prepare("UPDATE sessions SET {$column} = :candidates WHERE code = :code");
-        $stmt->execute([
-            ':candidates' => json_encode($currentList, JSON_UNESCAPED_SLASHES),
-            ':code' => $code,
-        ]);
+        if (isset($candidate['sdpMLineIndex']) && !is_int($candidate['sdpMLineIndex'])) {
+            sendJson(400, ['error' => 'Invalid ICE media index']);
+        }
+        // Append in the database so concurrent candidate POSTs do not overwrite one another.
+        $stmt = $pdo->prepare("UPDATE sessions SET {$column} =
+            JSON_ARRAY_APPEND(COALESCE({$column}, JSON_ARRAY()), '$', JSON_EXTRACT(:candidate, '$'))
+            WHERE code = :code AND expires_at > NOW()");
+        $stmt->execute([':candidate' => json_encode($candidate), ':code' => $code]);
+        if ($stmt->rowCount() !== 1) {
+            sendJson(404, ['error' => 'Session not found or expired']);
+        }
 
         sendJson(200, ['status' => 'ok']);
     }

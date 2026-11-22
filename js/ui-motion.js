@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
       message = 'File verified and ready to download';
       tone = 'verified';
     } else if (pill.classList.contains('failed')) {
-      message = 'Transfer interrupted';
+      message = document.getElementById('transfer-heading').textContent;
       tone = 'error';
     } else if (pill.classList.contains('cancelled')) {
       message = 'Transfer cancelled';

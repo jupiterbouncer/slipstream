@@ -10,7 +10,7 @@ return [
         'port' => 3306,
         'dbname' => 'slipstream',
         'user' => 'root',
-        'pass' => 'demiladesubair', // Default for AMPPS is 'mysql'. For XAMPP it is often empty ''.
+        'pass' => '', // Default for AMPPS is 'mysql'. For XAMPP it is often empty ''.
         'charset' => 'utf8mb4',
     ],
     'session' => [
