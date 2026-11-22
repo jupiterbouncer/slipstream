@@ -4,8 +4,6 @@
  * Ensures strict prepared statements, secure credentials handling, and lazy cleanup.
  */
 
-require_once __DIR__ . '/../config/config.php';
-
 function getDbConnection(): PDO {
     static $pdo = null;
     if ($pdo !== null) {
@@ -31,6 +29,7 @@ function getDbConnection(): PDO {
 
     try {
         $pdo = new PDO($dsn, $db['user'], $db['pass'], $options);
+        $pdo->exec("SET time_zone = '+00:00'");
     } catch (PDOException $e) {
         // Return structured 500 error without leaking raw database credentials
         http_response_code(500);
@@ -120,4 +119,20 @@ function clearRateLimit(PDO $pdo, string $ip): void {
     $ipHash = hash('sha256', $ip . '_slipstream_salt');
     $stmt = $pdo->prepare('DELETE FROM rate_limits WHERE ip_hash = :hash');
     $stmt->execute([':hash' => $ipHash]);
+}
+
+/** Count creations separately from failed lookups, using the existing rate-limit table. */
+function allowSessionCreation(PDO $pdo, string $ip, array $limits): bool {
+    $hash = hash('sha256', 'create:' . $ip);
+    $stmt = $pdo->prepare('
+        INSERT INTO rate_limits (ip_hash, failed_attempts, last_attempt_at)
+        VALUES (:hash, 1, NOW())
+        ON DUPLICATE KEY UPDATE
+            failed_attempts = IF(TIMESTAMPDIFF(SECOND, last_attempt_at, NOW()) >= :window, 1, failed_attempts + 1),
+            last_attempt_at = IF(failed_attempts = 1, NOW(), last_attempt_at)
+    ');
+    $stmt->execute([':hash' => $hash, ':window' => $limits['window_seconds']]);
+    $stmt = $pdo->prepare('SELECT failed_attempts FROM rate_limits WHERE ip_hash = :hash');
+    $stmt->execute([':hash' => $hash]);
+    return (int)$stmt->fetchColumn() <= ($limits['max_creations'] ?? 10);
 }

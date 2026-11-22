@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slipstream QA — Test File Generator & Verifier</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --color-fog: #F4F5F7;
+      --color-graphite: #15171B;
+      --color-slip-coral: #FF5A3C;
+      --color-vector: #2E9E83;
+      --color-steel: #5B6472;
+      --color-mist: #E7E9ED;
+      --color-white: #FFFFFF;
+      --color-error: #D93829;
+      --font-heading: 'Space Grotesk', -apple-system, sans-serif;
+      --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background-color: var(--color-fog);
+      color: var(--color-graphite);
+      line-height: 1.5;
+      padding: 32px 20px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      max-width: 840px;
+      width: 100%;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--color-mist);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 20px;
+      color: var(--color-graphite);
+      text-decoration: none;
+    }
+
+    .qa-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #E6F5F1;
+      color: var(--color-vector);
+    }
+
+    .card {
+      background: var(--color-white);
+      border: 1px solid var(--color-mist);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    }
+
+    h1 {
+      font-family: var(--font-heading);
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    p.subtitle {
+      font-size: 14px;
+      color: var(--color-steel);
+      margin-bottom: 24px;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--color-mist);
+      padding-bottom: 12px;
+    }
+
+    .tab-btn {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 600;
+      background: transparent;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--color-steel);
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--color-graphite);
+      color: var(--color-white);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Preset Buttons */
+    .presets-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-graphite);
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .preset-btn {
+      border: 1px solid var(--color-mist);
+      background: var(--color-fog);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+
+    .preset-btn:hover {
+      border-color: var(--color-slip-coral);
+      background: #FFF5F2;
+    }
+
+    .preset-btn.active {
+      border-color: var(--color-slip-coral);
+      background: #FFF5F2;
+      color: var(--color-slip-coral);
+      font-weight: 600;
+    }
+
+    .preset-btn small {
+      display: block;
+      font-size: 11px;
+      color: var(--color-steel);
+      margin-top: 2px;
+    }
+
+    /* Custom Input Row */
+    .input-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      align-items: flex-end;
+    }
+
+    .form-group {
+      flex: 1;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--color-graphite);
+    }
+
+    input[type="number"], input[type="text"], select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--color-mist);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--color-white);
+      color: var(--color-graphite);
+      outline: none;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--color-slip-coral);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 22px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background-color: var(--color-slip-coral);
+      color: var(--color-white);
+    }
+
+    .btn-primary:hover {
+      background-color: #E84D31;
+    }
+
+    .btn-secondary {
+      background: var(--color-white);
+      border: 1px solid var(--color-mist);
+      color: var(--color-graphite);
+    }
+
+    .btn-secondary:hover {
+      background: var(--color-fog);
+    }
+
+    /* Details Panel */
+    .details-panel {
+      background: var(--color-fog);
+      border: 1px solid var(--color-mist);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .detail-label {
+      color: var(--color-steel);
+    }
+
+    .detail-value {
+      font-weight: 600;
+      font-family: 'Space Grotesk', monospace;
+    }
+
+    .hash-display {
+      background: var(--color-white);
+      border: 1px solid var(--color-mist);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+      color: var(--color-graphite);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hash-text {
+      flex: 1;
+    }
+
+    .copy-btn {
+      background: var(--color-fog);
+      border: 1px solid var(--color-mist);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .copy-btn:hover {
+      background: var(--color-mist);
+    }
+
+    /* Dropzone Verifier */
+    .dropzone {
+      border: 2px dashed var(--color-mist);
+      border-radius: 14px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      background: #FAFAFB;
+      transition: all 0.2s ease;
+      margin-bottom: 20px;
+    }
+
+    .dropzone.drag-over {
+      border-color: var(--color-slip-coral);
+      background: #FFF5F2;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .status-success {
+      background: #E6F5F1;
+      color: var(--color-vector);
+    }
+
+    .status-error {
+      background: #FDE8E6;
+      color: var(--color-error);
+    }
+
+    /* Reference Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--color-mist);
+    }
+
+    th {
+      font-family: var(--font-heading);
+      font-weight: 600;
+      background: var(--color-fog);
+      color: var(--color-steel);
+    }
+
+    code {
+      font-family: monospace;
+      font-size: 12px;
+      background: var(--color-fog);
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--color-steel);
+      margin-top: 32px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <a href="../index.html" class="brand">
+        <svg width="24" height="24" viewBox="0 0 28 28" aria-hidden="true">
+          <rect width="28" height="28" rx="8" fill="#FF5A3C"></rect>
+          <path d="M9 18 L17 10 M17 10 L12 10 M17 10 L17 15" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+        </svg>
+        Slipstream
+      </a>
+      <span class="qa-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        Phase 2 QA Toolkit
+      </span>
+    </header>
+
+    <div class="card">
+      <h1>Test-File Generator & SHA-256 Verifier</h1>
+      <p class="subtitle">Generate precise chunk-boundary fixtures and verify WebRTC file transfer integrity (§3, §10).</p>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tab-generator">1. File Generator</button>
+        <button class="tab-btn" data-tab="tab-verifier">2. Received-File Verifier</button>
+        <button class="tab-btn" data-tab="tab-matrix">3. Boundary Matrix Reference</button>
+      </div>
+
+      <!-- Tab 1: File Generator -->
+      <div id="tab-generator" class="tab-content active">
+        <span class="presets-label">Boundary Presets (Fixed 16 KiB Chunks):</span>
+        <div class="preset-grid">
+          <button type="button" class="preset-btn" data-size="0">
+            0 Bytes
+            <small>Empty file (0 chunks)</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="1">
+            1 Byte
+            <small>Minimal chunk (1 byte)</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="16383">
+            16,383 Bytes
+            <small>16 KiB - 1 B (1 chunk)</small>
+          </button>
+          <button type="button" class="preset-btn active" data-size="16384">
+            16,384 Bytes
+            <small>Exact 1 chunk boundary</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="16385">
+            16,385 Bytes
+            <small>16 KiB + 1 B (2 chunks)</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="32768">
+            32,768 Bytes
+            <small>Exact 2 chunks</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="1048576">
+            1 MiB
+            <small>64 chunks</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="10485760">
+            10 MiB
+            <small>640 chunks</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="52428800">
+            50 MiB
+            <small>3,200 chunks</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="104857600">
+            100 MiB
+            <small>Guardrail limit (§3.3)</small>
+          </button>
+          <button type="button" class="preset-btn" data-size="110100480">
+            105 MiB
+            <small>Over limit (Rejection)</small>
+          </button>
+        </div>
+
+        <div class="input-row">
+          <div class="form-group" style="flex: 2;">
+            <label for="custom-size">Custom Size</label>
+            <input type="number" id="custom-size" value="16384" min="0">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="unit-select">Unit</label>
+            <select id="unit-select">
+              <option value="1">Bytes</option>
+              <option value="1024">KiB (1,024 B)</option>
+              <option value="1048576">MiB (1,048,576 B)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1.5;">
+            <label for="pattern-select">Pattern</label>
+            <select id="pattern-select">
+              <option value="cyclic">Deterministic (0x00-0xFF)</option>
+              <option value="zeros">Null Bytes (0x00)</option>
+              <option value="random">Pseudo-Random</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="details-panel">
+          <div class="detail-row">
+            <span class="detail-label">File Size:</span>
+            <span class="detail-value" id="display-size">16,384 bytes (16.0 KB)</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Chunk Count (16 KiB / 16384 B):</span>
+            <span class="detail-value" id="display-chunks">1 chunk</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Final Chunk Size:</span>
+            <span class="detail-value" id="display-final-chunk">16,384 bytes</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Guardrail Status:</span>
+            <span class="detail-value" id="display-guardrail" style="color: var(--color-vector);">Allowed (&le; 100 MiB)</span>
+          </div>
+
+          <label style="margin-top: 4px; font-size: 12px; color: var(--color-steel);">Expected SHA-256 Digest:</label>
+          <div class="hash-display">
+            <span class="hash-text" id="display-hash">Calculating...</span>
+            <button type="button" class="copy-btn" id="btn-copy-hash">Copy</button>
+          </div>
+        </div>
+
+        <div style="margin-top: 24px; display: flex; gap: 12px;">
+          <button type="button" class="btn btn-primary" id="btn-download-file">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download Test File
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 2: Received File Verifier -->
+      <div id="tab-verifier" class="tab-content">
+        <p style="font-size: 14px; color: var(--color-steel); margin-bottom: 16px;">
+          Drop or select a file downloaded through Slipstream WebRTC to inspect its actual byte count and compute its SHA-256 digest locally in your browser.
+        </p>
+
+        <div class="dropzone" id="verifier-dropzone">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-steel)" stroke-width="2" style="margin-bottom: 8px;">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path>
+          </svg>
+          <p style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Choose a file or drag & drop here</p>
+          <p style="font-size: 12px; color: var(--color-steel);">Drop downloaded file to verify</p>
+          <input type="file" id="verifier-file-input" style="display: none;">
+        </div>
+
+        <div id="verifier-results" style="display: none;">
+          <div class="details-panel" style="margin-top: 0;">
+            <div class="detail-row">
+              <span class="detail-label">File Name:</span>
+              <span class="detail-value" id="verifier-filename">-</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">File Size:</span>
+              <span class="detail-value" id="verifier-size">-</span>
+            </div>
+            <label style="margin-top: 4px; font-size: 12px; color: var(--color-steel);">Computed SHA-256 Digest:</label>
+            <div class="hash-display">
+              <span class="hash-text" id="verifier-computed-hash">-</span>
+              <button type="button" class="copy-btn" id="btn-copy-verifier-hash">Copy</button>
+            </div>
+
+            <div style="margin-top: 10px;">
+              <label for="expected-hash-input">Compare with Expected SHA-256 Hash:</label>
+              <input type="text" id="expected-hash-input" placeholder="Paste 64-char expected SHA-256 hex here...">
+            </div>
+
+            <div id="comparison-badge" style="margin-top: 8px; display: none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Protocol Matrix Reference -->
+      <div id="tab-matrix" class="tab-content">
+        <p style="font-size: 14px; color: var(--color-steel); margin-bottom: 12px;">
+          Phase 2 Protocol Verification Matrix as specified in <code>PHASE2_PROTOCOL.md</code> §10:
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Test Target</th>
+              <th>Bytes / Chunks</th>
+              <th>Pass Criteria</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>0-Byte File</strong></td>
+              <td><code>0 B</code> (0 chunks)</td>
+              <td>Offer/accept/start/complete/ack succeeds; verified empty download.</td>
+            </tr>
+            <tr>
+              <td><strong>1-Byte File</strong></td>
+              <td><code>1 B</code> (1 chunk)</td>
+              <td>Exactly 1 binary chunk of 1 byte; hash match.</td>
+            </tr>
+            <tr>
+              <td><strong>Chunk - 1 B</strong></td>
+              <td><code>16,383 B</code> (1 chunk)</td>
+              <td>Single chunk of 16,383 bytes; exact reassembly.</td>
+            </tr>
+            <tr>
+              <td><strong>Chunk Boundary</strong></td>
+              <td><code>16,384 B</code> (1 chunk)</td>
+              <td>Exact single 16 KiB chunk; boundary alignment.</td>
+            </tr>
+            <tr>
+              <td><strong>Chunk + 1 B</strong></td>
+              <td><code>16,385 B</code> (2 chunks)</td>
+              <td>2 chunks: chunk 0 is 16,384 B, chunk 1 is 1 B.</td>
+            </tr>
+            <tr>
+              <td><strong>Multi-Chunk Stream</strong></td>
+              <td><code>10 MiB</code> (640 chunks)</td>
+              <td>Sequential ordered chunks with back-pressure handling.</td>
+            </tr>
+            <tr>
+              <td><strong>Guardrail Limit</strong></td>
+              <td><code>100 MiB</code> (6,400 chunks)</td>
+              <td>Transfers without tab crash; within memory threshold.</td>
+            </tr>
+            <tr>
+              <td><strong>Over Guardrail</strong></td>
+              <td><code>&gt; 100 MiB</code></td>
+              <td>Rejected at offer stage before any bytes are transmitted.</td>
+            </tr>
+            <tr>
+              <td><strong>Hash Mismatch</strong></td>
+              <td>Corrupted chunk</td>
+              <td>Receiver sends <code>HASH_MISMATCH</code>; download suppressed.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <footer>
+      Slipstream QA Suite &bull; CS341 Web Technologies Final Project &bull; Person 5 Deliverable
+    </footer>
+  </div>
+
+  <script>
+    const CHUNK_SIZE = 16384;
+    const MAX_GUARDRAIL = 100 * 1024 * 1024; // 100 MiB
+
+    // Tab switching
+    const tabs = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    tabs.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        const target = document.getElementById(btn.getAttribute('data-tab'));
+        if (target) target.classList.add('active');
+      });
+    });
+
+    // Generator elements
+    const customSizeInput = document.getElementById('custom-size');
+    const unitSelect = document.getElementById('unit-select');
+    const patternSelect = document.getElementById('pattern-select');
+    const displaySize = document.getElementById('display-size');
+    const displayChunks = document.getElementById('display-chunks');
+    const displayFinalChunk = document.getElementById('display-final-chunk');
+    const displayGuardrail = document.getElementById('display-guardrail');
+    const displayHash = document.getElementById('display-hash');
+    const btnDownload = document.getElementById('btn-download-file');
+    const btnCopyHash = document.getElementById('btn-copy-hash');
+    const presetBtns = document.querySelectorAll('.preset-btn');
+
+    let currentSizeBytes = 16384;
+    let currentHash = '';
+    let currentBlob = null;
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    async function computeSHA256(buffer) {
+      const digest = await crypto.subtle.digest('SHA-256', buffer);
+      return Array.from(new Uint8Array(digest))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    function createPatternBuffer(size, patternType) {
+      const buffer = new Uint8Array(size);
+      if (size === 0) return buffer;
+
+      if (patternType === 'cyclic') {
+        for (let i = 0; i < size; i++) {
+          buffer[i] = i % 256;
+        }
+      } else if (patternType === 'zeros') {
+        buffer.fill(0);
+      } else if (patternType === 'random') {
+        // Fast deterministic pseudo-random sequence
+        let state = 123456789;
+        for (let i = 0; i < size; i++) {
+          state = (state * 1664525 + 1013904223) >>> 0;
+          buffer[i] = state & 0xFF;
+        }
+      }
+      return buffer;
+    }
+
+    async function updateGenerator() {
+      const rawVal = parseFloat(customSizeInput.value) || 0;
+      const multiplier = parseInt(unitSelect.value, 10);
+      currentSizeBytes = Math.max(0, Math.round(rawVal * multiplier));
+
+      const totalChunks = currentSizeBytes === 0 ? 0 : Math.ceil(currentSizeBytes / CHUNK_SIZE);
+      const finalChunk = currentSizeBytes === 0 ? 0 : (currentSizeBytes % CHUNK_SIZE === 0 ? CHUNK_SIZE : currentSizeBytes % CHUNK_SIZE);
+
+      displaySize.textContent = `${currentSizeBytes.toLocaleString()} bytes (${formatBytes(currentSizeBytes)})`;
+      displayChunks.textContent = `${totalChunks.toLocaleString()} chunk${totalChunks === 1 ? '' : 's'}`;
+      displayFinalChunk.textContent = `${finalChunk.toLocaleString()} bytes`;
+
+      if (currentSizeBytes > MAX_GUARDRAIL) {
+        displayGuardrail.textContent = 'Over Limit (> 100 MiB) — Sender will reject';
+        displayGuardrail.style.color = 'var(--color-error)';
+      } else {
+        displayGuardrail.textContent = 'Allowed (≤ 100 MiB)';
+        displayGuardrail.style.color = 'var(--color-vector)';
+      }
+
+      displayHash.textContent = 'Computing SHA-256...';
+
+      // If size is very large (> 20MB) compute asynchronously in chunks to prevent UI freeze
+      const patternType = patternSelect.value;
+      const buffer = createPatternBuffer(currentSizeBytes, patternType);
+      currentBlob = new Blob([buffer], { type: 'application/octet-stream' });
+
+      currentHash = await computeSHA256(buffer);
+      displayHash.textContent = currentHash;
+    }
+
+    // Preset handlers
+    presetBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        presetBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const size = parseInt(btn.getAttribute('data-size'), 10);
+        customSizeInput.value = size;
+        unitSelect.value = '1';
+        updateGenerator();
+      });
+    });
+
+    customSizeInput.addEventListener('input', () => {
+      presetBtns.forEach(b => b.classList.remove('active'));
+      updateGenerator();
+    });
+
+    unitSelect.addEventListener('change', updateGenerator);
+    patternSelect.addEventListener('change', updateGenerator);
+
+    btnCopyHash.addEventListener('click', () => {
+      if (currentHash) {
+        navigator.clipboard.writeText(currentHash).then(() => {
+          btnCopyHash.textContent = 'Copied!';
+          setTimeout(() => btnCopyHash.textContent = 'Copy', 1500);
+        });
+      }
+    });
+
+    btnDownload.addEventListener('click', () => {
+      if (!currentBlob) return;
+      const url = URL.createObjectURL(currentBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      const prefix = currentHash ? currentHash.substring(0, 8) : 'file';
+      a.download = `slipstream_test_${currentSizeBytes}b_${prefix}.bin`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    // Verifier elements
+    const dropzone = document.getElementById('verifier-dropzone');
+    const verifierFileInput = document.getElementById('verifier-file-input');
+    const verifierResults = document.getElementById('verifier-results');
+    const verifierFilename = document.getElementById('verifier-filename');
+    const verifierSize = document.getElementById('verifier-size');
+    const verifierComputedHash = document.getElementById('verifier-computed-hash');
+    const btnCopyVerifierHash = document.getElementById('btn-copy-verifier-hash');
+    const expectedHashInput = document.getElementById('expected-hash-input');
+    const comparisonBadge = document.getElementById('comparison-badge');
+
+    let lastComputedHash = '';
+
+    dropzone.addEventListener('click', () => verifierFileInput.click());
+
+    ['dragenter', 'dragover'].forEach(ev => {
+      dropzone.addEventListener(ev, e => {
+        e.preventDefault();
+        dropzone.classList.add('drag-over');
+      });
+    });
+
+    ['dragleave', 'dragend', 'drop'].forEach(ev => {
+      dropzone.addEventListener(ev, e => {
+        e.preventDefault();
+        dropzone.classList.remove('drag-over');
+      });
+    });
+
+    dropzone.addEventListener('drop', e => {
+      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+        processVerifierFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    verifierFileInput.addEventListener('change', e => {
+      if (e.target.files && e.target.files.length > 0) {
+        processVerifierFile(e.target.files[0]);
+      }
+    });
+
+    async function processVerifierFile(file) {
+      if (!file) return;
+      verifierFilename.textContent = file.name;
+      verifierSize.textContent = `${file.size.toLocaleString()} bytes (${formatBytes(file.size)})`;
+      verifierComputedHash.textContent = 'Computing SHA-256 digest...';
+      verifierResults.style.display = 'block';
+
+      const arrayBuffer = await file.arrayBuffer();
+      lastComputedHash = await computeSHA256(arrayBuffer);
+      verifierComputedHash.textContent = lastComputedHash;
+      checkHashComparison();
+    }
+
+    expectedHashInput.addEventListener('input', checkHashComparison);
+
+    function checkHashComparison() {
+      const expected = expectedHashInput.value.trim().toLowerCase();
+      if (!expected || !lastComputedHash) {
+        comparisonBadge.style.display = 'none';
+        return;
+      }
+
+      comparisonBadge.style.display = 'inline-flex';
+      if (expected === lastComputedHash) {
+        comparisonBadge.className = 'status-badge status-success';
+        comparisonBadge.innerHTML = '&#10003; SHA-256 MATCH: Exact byte-for-byte verification passed';
+      } else {
+        comparisonBadge.className = 'status-badge status-error';
+        comparisonBadge.innerHTML = '&#10007; HASH MISMATCH: Received bytes do not match expected digest';
+      }
+    }
+
+    btnCopyVerifierHash.addEventListener('click', () => {
+      if (lastComputedHash) {
+        navigator.clipboard.writeText(lastComputedHash).then(() => {
+          btnCopyVerifierHash.textContent = 'Copied!';
+          setTimeout(() => btnCopyVerifierHash.textContent = 'Copy', 1500);
+        });
+      }
+    });
+
+    // Initial calculation
+    updateGenerator();
+  </script>
+</body>
+</html>

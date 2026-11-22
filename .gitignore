@@ -45,3 +45,6 @@ Desktop.ini
 .vscode/
 .idea/
 *.code-workspace
+
+# Generated public upload directories
+/build/infinityfree/

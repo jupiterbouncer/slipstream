@@ -18,30 +18,42 @@ const Api = (() => {
 
     options.headers = { ...defaultHeaders, ...options.headers };
 
-    const res = await fetch(url, options);
+    // Log only the resource name. URLs contain pairing codes and bodies can contain SDP.
+    const resource = url.split('?')[0].split('/')[3] || 'session';
+    const diagnostic = { method: options.method, resource };
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (error) {
+      if (!options.signal?.aborted) console.warn('[Slipstream signaling]', { ...diagnostic, reason: 'network' });
+      throw error;
+    }
 
     if (res.status === 204) {
       return null;
     }
 
-    let data = null;
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
+    const isJson = res.headers.get('content-type')?.includes('application/json');
+    if (!isJson) {
+      const challenge = /\baes\.js\b/i.test(await res.text());
+      console.warn('[Slipstream signaling]', { ...diagnostic, status: res.status, reason: challenge ? 'browser challenge' : 'non-JSON response' });
+      const err = new Error('The signaling service returned a web page. Open the site in this browser and check the session route.');
+      err.status = res.status;
+      throw err;
+    }
+    let data;
+    try {
       data = await res.json();
-    } else {
-      const text = await res.text();
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { error: text };
-      }
+    } catch {
+      console.warn('[Slipstream signaling]', { ...diagnostic, status: res.status, reason: 'invalid JSON' });
+      throw new Error('The signaling service returned an unreadable response.');
     }
 
     if (!res.ok) {
+      console.warn('[Slipstream signaling]', { ...diagnostic, status: res.status });
       const errorMsg = data?.error || data?.message || `Request failed with status ${res.status}`;
       const err = new Error(errorMsg);
       err.status = res.status;
-      err.data = data;
       throw err;
     }
 
@@ -83,8 +95,9 @@ const Api = (() => {
      * Joiner polls for SDP offer (GET /sessions/{code}/offer)
      * Returns offer object or null (if 204 No Content)
      */
-    async getOffer(code) {
+    async getOffer(code, signal) {
       const res = await request(`${BASE_URL}/${encodeURIComponent(code)}/offer`, {
+        signal,
         method: 'GET',
       });
       return res?.offer || null;
@@ -93,8 +106,9 @@ const Api = (() => {
     /**
      * Joiner submits SDP answer (POST /sessions/{code}/answer)
      */
-    async sendAnswer(code, answer) {
+    async sendAnswer(code, answer, signal) {
       return await request(`${BASE_URL}/${encodeURIComponent(code)}/answer`, {
+        signal,
         method: 'POST',
         body: JSON.stringify({ answer }),
       });
@@ -104,8 +118,9 @@ const Api = (() => {
      * Host polls for SDP answer (GET /sessions/{code}/answer)
      * Returns answer object or null (if 204 No Content)
      */
-    async getAnswer(code) {
+    async getAnswer(code, signal) {
       const res = await request(`${BASE_URL}/${encodeURIComponent(code)}/answer`, {
+        signal,
         method: 'GET',
       });
       return res?.answer || null;
@@ -115,10 +130,11 @@ const Api = (() => {
      * Submit an ICE candidate (POST /sessions/{code}/ice-candidates)
      * role: 'host' | 'joiner' (who is submitting)
      */
-    async sendIceCandidate(code, role, candidate) {
+    async sendIceCandidate(code, role, candidate, signal) {
       return await request(`${BASE_URL}/${encodeURIComponent(code)}/ice-candidates`, {
         method: 'POST',
         body: JSON.stringify({ role, candidate }),
+        signal,
       });
     },
 
@@ -127,27 +143,30 @@ const Api = (() => {
      * peerRole: role of the other party whose candidates we want to fetch
      * Host passes 'joiner'; Joiner passes 'host' (§5, §108)
      */
-    async getIceCandidates(code, peerRole, afterIndex = 0) {
+    async getIceCandidates(code, peerRole, afterIndex = 0, signal) {
       let url = `${BASE_URL}/${encodeURIComponent(code)}/ice-candidates?role=${encodeURIComponent(peerRole)}`;
       if (afterIndex > 0) {
         url += `&after=${afterIndex}`;
       }
       const res = await request(url, {
+        signal,
         method: 'GET',
       });
       return res?.candidates || [];
     },
 
     /**
-     * Delete signaling records upon completion or cancellation (DELETE /sessions/{code})
+     * Delete signaling records upon completion or cancellation (POST /sessions/{code}/delete)
      */
     async deleteSession(code) {
       try {
-        await request(`${BASE_URL}/${encodeURIComponent(code)}`, {
-          method: 'DELETE',
+        await request(`${BASE_URL}/${encodeURIComponent(code)}/delete`, {
+          method: 'POST',
+          body: '{}',
         });
+        return true;
       } catch (err) {
-        console.warn('Could not delete session:', err);
+        return err.status === 404 || err.status === 410;
       }
     },
   };

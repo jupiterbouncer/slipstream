@@ -1,0 +1,117 @@
+{
+    "generatedAt": "2026-11-18T14:01:39+00:00",
+    "protocolVersion": 1,
+    "chunkSize": 16384,
+    "files": [
+        {
+            "filename": "test_0b.bin",
+            "description": "0-byte empty file (Protocol edge case, totalChunks: 0)",
+            "sizeBytes": 0,
+            "formattedSize": "0 B",
+            "chunkSize": 16384,
+            "totalChunks": 0,
+            "finalChunkSize": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_0b.bin"
+        },
+        {
+            "filename": "test_1b.bin",
+            "description": "1-byte file (Single chunk: 1 byte)",
+            "sizeBytes": 1,
+            "formattedSize": "1 B",
+            "chunkSize": 16384,
+            "totalChunks": 1,
+            "finalChunkSize": 1,
+            "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_1b.bin"
+        },
+        {
+            "filename": "test_16383b.bin",
+            "description": "16,383 bytes (Chunk boundary minus 1 byte; single chunk)",
+            "sizeBytes": 16383,
+            "formattedSize": "16 KB",
+            "chunkSize": 16384,
+            "totalChunks": 1,
+            "finalChunkSize": 16383,
+            "sha256": "fab82f1352405c22ca2953ff80a508e5567c51e1a9aeb57cf9a56447e40ba066",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_16383b.bin"
+        },
+        {
+            "filename": "test_16384b.bin",
+            "description": "16,384 bytes (Exact 16 KiB chunk boundary; single chunk)",
+            "sizeBytes": 16384,
+            "formattedSize": "16 KB",
+            "chunkSize": 16384,
+            "totalChunks": 1,
+            "finalChunkSize": 16384,
+            "sha256": "a1f259d4365ed4320c377ce26f5c8c56dcdc9a89e7b641bfd8eabfbbeac86654",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_16384b.bin"
+        },
+        {
+            "filename": "test_16385b.bin",
+            "description": "16,385 bytes (Chunk boundary plus 1 byte; exactly 2 chunks: 16,384 + 1)",
+            "sizeBytes": 16385,
+            "formattedSize": "16 KB",
+            "chunkSize": 16384,
+            "totalChunks": 2,
+            "finalChunkSize": 1,
+            "sha256": "0000baf2684790c1122339755831010d032e896ce376a38e20106fcdd0a5517c",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_16385b.bin"
+        },
+        {
+            "filename": "test_32768b.bin",
+            "description": "32,768 bytes (Exact 2 full chunks: 2 x 16,384)",
+            "sizeBytes": 32768,
+            "formattedSize": "32 KB",
+            "chunkSize": 16384,
+            "totalChunks": 2,
+            "finalChunkSize": 16384,
+            "sha256": "e11360251d1173650cdcd20f111d8f1ca2e412f572e8b36a4dc067121c1799b8",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_32768b.bin"
+        },
+        {
+            "filename": "test_65536b.bin",
+            "description": "65,536 bytes (Exact 4 full chunks)",
+            "sizeBytes": 65536,
+            "formattedSize": "64 KB",
+            "chunkSize": 16384,
+            "totalChunks": 4,
+            "finalChunkSize": 16384,
+            "sha256": "7daca2095d0438260fa849183dfc67faa459fdf4936e1bc91eec6b281b27e4c2",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_65536b.bin"
+        },
+        {
+            "filename": "test_1mb.bin",
+            "description": "1,048,576 bytes (1 MiB; 64 chunks)",
+            "sizeBytes": 1048576,
+            "formattedSize": "1 MB",
+            "chunkSize": 16384,
+            "totalChunks": 64,
+            "finalChunkSize": 16384,
+            "sha256": "fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_1mb.bin"
+        },
+        {
+            "filename": "test_5mb.bin",
+            "description": "5,242,880 bytes (5 MiB; 320 chunks)",
+            "sizeBytes": 5242880,
+            "formattedSize": "5 MB",
+            "chunkSize": 16384,
+            "totalChunks": 320,
+            "finalChunkSize": 16384,
+            "sha256": "2e7cab6314e9614b6f2da12630661c3038e5592025f6534ba5823c3b340a1cb6",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_5mb.bin"
+        },
+        {
+            "filename": "test_10mb.bin",
+            "description": "10,485,760 bytes (10 MiB; 640 chunks)",
+            "sizeBytes": 10485760,
+            "formattedSize": "10 MB",
+            "chunkSize": 16384,
+            "totalChunks": 640,
+            "finalChunkSize": 16384,
+            "sha256": "aecf3c2ab8aca74852bca07b54136cecb3fdafdc35540068ed952c0b89538e0d",
+            "path": "C:\\Users\\Demilade Subair\\OneDrive - Ashesi University\\3rd year\\1st Semester\\Web Tech\\Final Project\\slipstream\\qa/fixtures/test_10mb.bin"
+        }
+    ]
+}

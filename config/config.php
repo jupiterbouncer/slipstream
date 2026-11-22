@@ -2,7 +2,7 @@
 /**
  * Slipstream Configuration Loader
  * Handles database credentials and application settings.
- * Precedence: Environment variables > config.local.php > default config.
+ * Precedence: Private local overrides take precedence over environment variables and defaults.
  */
 
 $defaults = [
@@ -11,7 +11,7 @@ $defaults = [
         'port' => (int)(getenv('DB_PORT') ?: 3306),
         'dbname' => getenv('DB_NAME') ?: 'slipstream',
         'user' => getenv('DB_USER') ?: 'root',
-        'pass' => getenv('DB_PASS') !== false ? getenv('DB_PASS') : 'mysql',
+        'pass' => getenv('DB_PASS') !== false ? getenv('DB_PASS') : '',
         'charset' => 'utf8mb4',
     ],
     'session' => [
