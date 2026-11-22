@@ -195,34 +195,17 @@
 
           <!-- File Selection Area (Phase 2 Preview & Dropzone) -->
           <div id="sender-file-section" style="margin-top: 1rem; display: none;">
-            <div class="dropzone" id="file-dropzone" role="button" tabindex="0" aria-label="Choose a file or tap to browse">
+            <div class="dropzone" id="file-dropzone" role="button" tabindex="0" aria-label="Choose files to queue">
               <span class="drop-demo" aria-hidden="true">
                 <span class="demo-surface"></span>
                 <span class="demo-tray"></span>
                 <span class="paper-icon"></span>
               </span>
-              <p class="dropzone-title">Drop a file here</p>
-              <p class="dropzone-subtitle">Or choose one from your device.</p>
+              <p class="dropzone-title">Drop files here</p>
+              <p class="dropzone-subtitle">Or choose files from your device.</p>
               <span class="btn btn-secondary dropzone-btn" aria-hidden="true">Browse files</span>
-              <input type="file" id="file-input" style="display: none;">
             </div>
-
-            <!-- File preview card matching reference screen 3 -->
-            <div class="file-preview-card" id="file-preview" style="display: none;">
-              <span class="file-pieces" aria-hidden="true">
-                <span class="paper-icon"></span><i></i><i></i><i></i>
-              </span>
-              <div class="file-info">
-                <p class="file-name" id="preview-filename">document.pdf</p>
-                <p class="file-meta"><span id="preview-filesize"></span><span id="preview-filetype"></span></p>
-              </div>
-              <button type="button" class="file-remove-btn" id="btn-remove-file" aria-label="Remove selected file">✕</button>
-            </div>
-
-            <div id="file-actions" style="display: none; flex-direction: column; align-items: center; gap: 8px;">
-              <button type="button" class="btn btn-primary" id="btn-send-file" style="padding: 12px 32px;">Send file</button>
-              <button type="button" class="btn btn-ghost" id="btn-change-file" style="text-decoration: underline;">Choose a different file</button>
-            </div>
+            <input type="file" id="file-input" multiple hidden>
           </div>
 
           <!-- Receiver File Section (Phase 2 Incoming-File Preview & Acceptance) -->
@@ -294,7 +277,30 @@
           </div>
 
           <!-- Phase 1 Data Channel Proof & Verification Test Box -->
+          <section id="verified-files" class="session-tools" hidden>
+            <h3>Verified files</h3><ul class="file-list"></ul>
+          </section>
           <div id="session-tools" class="session-tools" hidden>
+            <section id="queue-panel" hidden>
+              <h3>Pending files</h3>
+              <ol id="queue-list" class="file-list"></ol>
+              <div class="session-actions">
+                <button id="btn-send-file" class="btn btn-primary">Send queue</button>
+                <button id="clear-queue" class="btn btn-secondary">Clear pending</button>
+              </div>
+              <p id="queue-feedback" role="status"></p>
+            </section>
+            <details id="share-panel">
+              <summary>Share text or a link</summary>
+              <label for="share-text">Text, link or code (8 KiB max)</label>
+              <textarea id="share-text" rows="3" maxlength="8192"></textarea>
+              <div class="session-actions">
+                <button class="btn btn-secondary" id="paste-text">Paste</button>
+                <button class="btn btn-primary" id="send-text">Send text</button>
+              </div>
+              <p id="share-feedback" role="status"></p>
+              <div id="received-text"></div>
+            </details>
             <details id="activity-panel">
               <summary>Session activity &amp; statistics</summary>
               <p id="session-stats"></p>
@@ -486,6 +492,11 @@
       </div>
     </footer>
   </div>
+  <dialog id="file-viewer" aria-labelledby="viewer-title">
+    <h2 id="viewer-title">File preview</h2>
+    <form method="dialog"><button class="btn btn-secondary" autofocus>Close preview</button></form>
+    <div class="preview-content"></div>
+  </dialog>
   <div class="ui-toast" id="ui-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Scripts: Vendor QR, API client, WebRTC manager, Phase 2 engines, App logic (§7.4) -->
@@ -497,6 +508,9 @@
   <script src="js/transfer-protocol.js"></script>
   <script src="js/file-sender.js"></script>
   <script src="js/file-receiver.js"></script>
+  <script src="js/file-queue.js"></script>
+  <script src="js/file-viewer.js"></script>
+  <script src="js/share-text.js"></script>
   <script src="js/app.js?v=20261122"></script>
   <script src="js/ui-motion.js"></script>
 </body>

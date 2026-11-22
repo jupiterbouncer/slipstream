@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createHash } = require('node:crypto');
-for (const name of ['webrtc', 'transfer-protocol', 'file-sender', 'file-receiver']) {
+for (const name of ['webrtc', 'transfer-protocol', 'file-sender', 'file-receiver', 'file-queue']) {
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../js', name + '.js'), 'utf8'), { filename: name });
 }
 
@@ -228,4 +228,53 @@ test('busy receiver and unsupported version preserve the active offer', async ()
   assert.equal(f.receiver.active.id, original.transferId);
   f.sender.cancel();
   assert.equal((await done).state, 'cancelled');
+});
+
+test('queue waits for engine cleanup and skips rejected and cancelled files', async () => {
+  const f = fixture();
+  let starts = 0;
+  const queue = new FileQueue(file => {
+    assert.equal(f.sender.active, null);
+    starts++;
+    return f.sender.start(file);
+  }, () => {});
+  queue.add([file(5), file(6), file(7), file(8)]);
+  const done = queue.run();
+  await queue.run();
+  for (const [size, decide] of [[5, 'reject'], [6, 'cancel'], [7, 'accept'], [8, 'accept']]) {
+    await until(() => f.receiver.active?.file.size === size);
+    assert.equal(f.receiver.active.state, 'awaiting-decision');
+    f.receiver[decide]();
+  }
+  await done;
+  assert.equal(starts, 4);
+  assert.deepEqual(f.completed[0].map(result => result.bytesReceived), [7, 8]);
+  assert.equal(f.sender.active, null);
+});
+
+test('clear pending preserves the active file until receiver verification', async () => {
+  const f = fixture({ drop: 'file-complete-ack' });
+  const queue = new FileQueue(file => f.sender.start(file), () => {});
+  queue.add([file(1), file(2)]);
+  const done = queue.run();
+  await until(() => f.receiver.active);
+  queue.clear();
+  f.receiver.accept();
+  await until(() => f.completed[1].length);
+  assert.equal(queue.running, true);
+  const ack = f.messages.find(m => m.type === 'file-complete-ack');
+  f.sender.handleControlMessage(ack);
+  f.sender.handleControlMessage(ack);
+  await done;
+  assert.equal(queue.running, false);
+  assert.equal(f.completed[0].length, 1);
+  assert.equal(f.messages.filter(m => m.type === 'file-offer').length, 1);
+});
+
+test('oversize, removal and failed starts leave remaining files reviewable', async () => {
+  const queue = new FileQueue(async () => ({ state: 'failed' }), () => {});
+  assert.deepEqual(queue.add([{ size: 2**30, name: 'big' }, file(1), file(2), file(3)]), ['big']);
+  queue.remove(1);
+  await queue.run();
+  assert.deepEqual(queue.pending.map(file => file.size), [3]);
 });

@@ -18,8 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
     receiver: null,          // SlipstreamFileReceiver instance
     transferState: 'idle',   // 'idle' | 'hashing' | 'offering' | 'awaiting-decision' | 'transferring' | 'verifying' | 'completed' | 'rejected' | 'cancelled' | 'failed'
     pendingOffer: null,      // Stored offer metadata on receiver
-    downloadUrl: null,       // Blob URL for verified download
-    downloadBlob: null,      // Assembled and verified Blob
     stats: {
       bytesTransferred: 0,
       totalBytes: 0,
@@ -31,6 +29,11 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const byId = id => document.getElementById(id);
+  const viewer = createPreviewDialog(byId('file-viewer'));
+  const textSharing = setupTextSharing(byId, () => state.peer, recordActivity);
+  const verifiedFiles = byId('verified-files');
+  const downloads = new Set();
+  let queue = null;
   let session = null;
   let sessionTimer;
   let transferName = '';
@@ -61,6 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function beginSession() {
     session = new SharingSession();
+    if (state.role === 'host') queue = new FileQueue(startFileSend, renderQueue);
+    renderQueue();
     byId('session-tools').hidden = false;
     byId('nickname').value = localDeviceLabel.textContent = state.role === 'host' ? 'Sender' : 'Receiver';
     peerDeviceLabel.textContent = state.role === 'host' ? 'Receiver' : 'Sender';
@@ -70,6 +75,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function clearSession() {
+    const previousQueue = queue;
+    queue = null;
+    previousQueue?.clear();
+    viewer.close();
+    textSharing.clear();
+    state.selectedFile = null;
+    fileInput.value = '';
+    byId('queue-feedback').textContent = '';
     clearInterval(sessionTimer);
     session = null;
     transferName = '';
@@ -86,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function receiveApplicationMessage(message) {
     if (!session) return;
+    if (message.type === 'share-text') textSharing.receive(message.text, peerDeviceLabel.textContent);
     if (message.type === 'device-name') peerDeviceLabel.textContent = message.name;
   }
 
@@ -154,13 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Sender File Dropzone & Preview Elements
   const fileDropzone = document.getElementById('file-dropzone');
   const fileInput = document.getElementById('file-input');
-  const filePreview = document.getElementById('file-preview');
-  const previewFilename = document.getElementById('preview-filename');
-  const previewFilesize = document.getElementById('preview-filesize');
-  const btnRemoveFile = document.getElementById('btn-remove-file');
-  const fileActions = document.getElementById('file-actions');
   const btnSendFile = document.getElementById('btn-send-file');
-  const btnChangeFile = document.getElementById('btn-change-file');
 
   // Receiver Incoming File Preview Elements (§7.5, Requirement 2)
   const incomingSection = document.getElementById('incoming-file-section');
@@ -233,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Keep the existing conversation accessible throughout an open connection.
     if (screenName === 'connected' || screenName === 'transfer') {
       const card = screens[screenName].querySelector('.connected-card');
-      if (chatBox.parentElement !== card) card.append(byId('session-tools'), chatBox);
+      if (chatBox.parentElement !== card) card.append(verifiedFiles, byId('session-tools'), chatBox);
     }
   }
 
@@ -303,11 +311,10 @@ document.addEventListener('DOMContentLoaded', () => {
       try { state.receiver.destroy(); } catch {}
       state.receiver = null;
     }
-    if (state.downloadUrl) {
-      URL.revokeObjectURL(state.downloadUrl);
-      state.downloadUrl = null;
-    }
-    state.downloadBlob = null;
+    for (const url of downloads) URL.revokeObjectURL(url);
+    downloads.clear();
+    verifiedFiles.querySelector('ul').replaceChildren();
+    verifiedFiles.hidden = true;
     state.pendingOffer = null;
     state.transferState = 'idle';
     state.stats = {
@@ -318,10 +325,6 @@ document.addEventListener('DOMContentLoaded', () => {
       lastBytes: 0,
       speedBps: 0,
     };
-
-    // Remove any dynamic download button
-    const oldDlBtn = document.getElementById('btn-download-file');
-    if (oldDlBtn) oldDlBtn.remove();
 
     // Reset receiver sections
     if (receiverFileSection) receiverFileSection.style.display = 'none';
@@ -358,8 +361,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Reset sender file preview
     if (fileInput) fileInput.value = '';
-    if (filePreview) filePreview.style.display = 'none';
-    if (fileActions) fileActions.style.display = 'none';
     if (fileDropzone) fileDropzone.style.display = 'block';
 
     // Reset active file badge
@@ -441,12 +442,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnSendAnother) btnSendAnother.style.display = 'none';
     if (btnRetryTransfer) btnRetryTransfer.style.display = 'none';
     if (btnReturnHome) btnReturnHome.style.display = 'none';
-
-    // Remove any previous dynamic download button if not completed
-    const oldDlBtn = document.getElementById('btn-download-file');
-    if (oldDlBtn && stateName !== 'completed') {
-      oldDlBtn.remove();
-    }
 
     switch (stateName) {
       case 'idle':
@@ -599,38 +594,35 @@ document.addEventListener('DOMContentLoaded', () => {
    * Set up verified download action button on receiver (§7.4)
    */
   function setupDownloadButton(blob, filename) {
-    if (state.downloadUrl) {
-      URL.revokeObjectURL(state.downloadUrl);
-      state.downloadUrl = null;
-    }
-    state.downloadBlob = blob;
-    state.downloadUrl = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob.slice(0, blob.size, 'application/octet-stream'));
+    downloads.add(url);
+    const row = document.createElement('li');
+    const link = document.createElement('a');
+    byId('btn-download-file')?.removeAttribute('id');
+    link.id = 'btn-download-file';
+    link.className = 'btn btn-primary';
+    link.href = url;
+    link.download = filename;
+    link.textContent = 'Download';
+    row.append(filename, ' ', link,
+      actionButton('Preview', () => viewer.open({ name: filename, blob, verified: true })),
+      actionButton('Remove', () => {
+        URL.revokeObjectURL(url);
+        downloads.delete(url);
+        row.remove();
+        verifiedFiles.hidden = !downloads.size;
+      }));
+    verifiedFiles.querySelector('ul').append(row);
+    verifiedFiles.hidden = false;
+  }
 
-    const oldBtn = document.getElementById('btn-download-file');
-    if (oldBtn) oldBtn.remove();
-
-    const dlBtn = document.createElement('a');
-    dlBtn.id = 'btn-download-file';
-    dlBtn.className = 'btn btn-primary';
-    dlBtn.href = state.downloadUrl;
-    dlBtn.download = filename;
-    dlBtn.innerHTML = `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="7 10 12 15 17 10"></polyline>
-        <line x1="12" y1="15" x2="12" y2="3"></line>
-      </svg>
-      Download
-    `;
-    dlBtn.append(document.createTextNode(' ' + filename));
-    dlBtn.style.textDecoration = 'none';
-    dlBtn.style.display = 'inline-flex';
-    dlBtn.style.alignItems = 'center';
-    dlBtn.style.justifyContent = 'center';
-
-    if (transferControls) {
-      transferControls.insertBefore(dlBtn, transferControls.firstChild);
-    }
+  function actionButton(label, click) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-secondary';
+    button.textContent = label;
+    button.onclick = click;
+    return button;
   }
 
   /**
@@ -908,23 +900,12 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Initiate file transfer on the host/sender (§5.1, §7.4).
    */
-  async function startFileSend() {
-    if (!state.selectedFile) {
-      alert('Please select a file to transfer.');
-      return;
-    }
-
-    // 100 MiB initial guardrail (§3.3)
-    if (state.selectedFile.size > TransferProtocol.maxFileSize) {
-      alert(`File exceeds the 100 MB limit (${formatFileSize(state.selectedFile.size)}). Please choose a smaller file.`);
-      return;
-    }
-
+  async function startFileSend(file) {
     if (!state.sender || !state.peer?.isChannelOpen()) {
       handleTransferError(new Error('Reconnect before sending a file.'));
-      return;
+      return { state: 'failed' };
     }
-
+    state.selectedFile = file;
     updateActiveFileBadge(state.selectedFile);
     showScreen('transfer');
 
@@ -936,10 +917,12 @@ document.addEventListener('DOMContentLoaded', () => {
     state.stats.totalBytes = state.selectedFile.size;
 
     try {
-      await state.sender.start(state.selectedFile);
+      return await state.sender.start(file);
     } catch (err) {
-      console.error('Failed to start file transfer:', err);
       handleTransferError(err);
+      return { state: 'failed' };
+    } finally {
+      if (state.selectedFile === file) state.selectedFile = null;
     }
   }
 
@@ -949,9 +932,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleIncomingOffer(offer) {
     state.stats.bytesTransferred = 0;
     state.stats.totalBytes = offer.size;
-    if (state.downloadUrl) URL.revokeObjectURL(state.downloadUrl);
-    state.downloadUrl = null;
-    state.downloadBlob = null;
     updateTransferUIState('idle');
     showScreen('connected');
     state.pendingOffer = offer;
@@ -1200,24 +1180,29 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Handle File Selection and Drag & Drop (Requirement G)
    */
-  function handleSelectedFile(file) {
-    if (!file) return;
-    state.selectedFile = file;
-
-    if (previewFilename) previewFilename.textContent = file.name;
-    if (previewFilesize) previewFilesize.textContent = formatFileSize(file.size);
-
-    if (fileDropzone) fileDropzone.style.display = 'none';
-    if (filePreview) filePreview.style.display = 'flex';
-    if (fileActions) fileActions.style.display = 'flex';
+  function renderQueue() {
+    const panel = byId('queue-panel');
+    const list = byId('queue-list');
+    list.replaceChildren();
+    panel.hidden = !queue;
+    if (!queue) return;
+    for (const [index, file] of queue.pending.entries()) {
+      const row = document.createElement('li');
+      row.append(file.name + ' · ' + (file.type || 'Unknown type') + ' · ' + formatFileSize(file.size) + ' · Queued ',
+        actionButton('Preview', () => viewer.open({ name: file.name, blob: file, local: true })),
+        actionButton('Remove', () => queue.remove(index)));
+      list.append(row);
+    }
+    btnSendFile.disabled = queue.running || !queue.pending.length;
+    byId('clear-queue').disabled = !queue.pending.length;
   }
 
-  function clearSelectedFile() {
-    state.selectedFile = null;
-    if (fileInput) fileInput.value = '';
-    if (filePreview) filePreview.style.display = 'none';
-    if (fileActions) fileActions.style.display = 'none';
-    if (fileDropzone) fileDropzone.style.display = 'block';
+  function addFiles(files) {
+    if (!queue) return;
+    const oversized = queue.add(files);
+    byId('queue-feedback').textContent = oversized.length
+      ? 'Over the 100 MiB limit: ' + oversized.join(', ') : '';
+    fileInput.value = '';
   }
 
   // Dropzone drag-and-drop event listeners with animated border (Requirement G)
@@ -1248,7 +1233,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fileDropzone.classList.remove('drag-over');
 
       if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        handleSelectedFile(e.dataTransfer.files[0]);
+        addFiles(e.dataTransfer.files);
       }
     });
 
@@ -1263,24 +1248,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (fileInput) {
     fileInput.addEventListener('change', (e) => {
       if (e.target.files && e.target.files.length > 0) {
-        handleSelectedFile(e.target.files[0]);
+        addFiles(e.target.files);
       }
     });
   }
 
-  if (btnRemoveFile) {
-    btnRemoveFile.addEventListener('click', clearSelectedFile);
-  }
-
-  if (btnChangeFile) {
-    btnChangeFile.addEventListener('click', () => {
-      if (fileInput) fileInput.click();
-    });
-  }
-
-  if (btnSendFile) {
-    btnSendFile.addEventListener('click', startFileSend);
-  }
+  byId('clear-queue').onclick = () => queue?.clear();
+  btnSendFile.onclick = () => queue?.run();
 
   if (btnCancelTransfer) {
     btnCancelTransfer.addEventListener('click', cancelActiveTransfer);
@@ -1300,7 +1274,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!state.peer?.isChannelOpen()) return retryConnection();
       showScreen('connected');
       updateTransferUIState('idle');
-      clearSelectedFile();
     });
   }
 
@@ -1309,8 +1282,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!state.peer?.isChannelOpen()) return retryConnection();
       showScreen('connected');
       updateTransferUIState('idle');
-      if (state.role === 'host') clearSelectedFile();
-      else {
+      if (state.role === 'joiner') {
         incomingSection.style.display = 'none';
         receiverWaitingBox.style.display = 'flex';
       }

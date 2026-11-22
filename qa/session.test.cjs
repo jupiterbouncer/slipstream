@@ -35,3 +35,18 @@ test('names are validated, routed only to the open session and never to file han
   assert.deepEqual(names, ['Laptop']);
   assert.equal(AppMessages.nickname('  My\u0007 laptop '), 'My laptop');
 });
+
+test('shared text enforces UTF-8 limits and offers only explicit HTTP(S) links', async () => {
+  const received = [];
+  const peer = new SlipstreamPeer({ role: 'joiner', onApplicationMessage: m => received.push(m.text),
+    onControlMessage: assert.fail, onBinaryMessage: assert.fail });
+  const valid = ['<b>some text</b>', 'é'.repeat(4096)];
+  for (const text of [...valid, 'é'.repeat(4097), 42, '  ']) {
+    await peer.handleIncomingData(JSON.stringify({ protocol: 'slipstream-app', version: 1, type: 'share-text', text }));
+  }
+  assert.deepEqual(received, valid);
+  assert.equal(AppMessages.link('https://example.org'), 'https://example.org/');
+  for (const value of ['javascript:alert(1)', 'file:///tmp/a', 'some https://example.org']) {
+    assert.equal(AppMessages.link(value), null);
+  }
+});
