@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="slipstream-favicon.svg">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="css/style.css?v=20261122">
+  <link rel="stylesheet" href="css/style.css?v=sharing3">
 </head>
 <body>
   <!-- Ambient background pattern -->
@@ -112,7 +112,7 @@
 
           <div class="waiting-indicator">
             <div class="pulse-dot" aria-hidden="true"></div>
-            <span id="host-status-msg">Waiting for peer device to connect...</span>
+            <span id="host-status-msg" role="status">Waiting for peer device to connect...</span>
           </div>
 
           <span class="expiry-text" id="host-expiry-text">Code expires in 10 minutes</span>
@@ -317,13 +317,14 @@
               <ol id="activity-list" aria-label="Session activity"></ol>
               <button class="btn btn-secondary" id="clear-activity">Clear activity</button>
             </details>
-            <details>
+            <details id="nickname-connection">
               <summary>Connection</summary>
               <label for="nickname">Your device name</label>
               <div class="session-actions"><input id="nickname" maxlength="32" autocomplete="off">
                 <button id="save-name" class="btn btn-secondary">Save name</button>
               </div>
               <p id="name-feedback" role="status"></p>
+              <button class="btn btn-secondary" data-modal="modal-help">Connection diagnostics</button>
               <button id="end-session" class="btn btn-ghost">End session</button>
             </details>
           </div>
@@ -332,9 +333,9 @@
             <p style="font-size: 0.8rem; color: var(--color-steel); margin-bottom: 0.5rem;">
               Send an instant text message directly through the WebRTC data channel to verify zero-server peer transmission:
             </p>
-            <div class="chat-log" id="test-chat-log">Data channel ready.</div>
+            <div class="chat-log" id="test-chat-log" role="log" aria-label="Peer chat">Data channel ready.</div>
             <div style="display: flex; gap: 0.5rem;">
-              <input type="text" id="test-message-input" disabled placeholder="Type a message..." style="flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-mist); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none;">
+              <input type="text" id="test-message-input" aria-label="Chat message" disabled placeholder="Type a message..." style="flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-mist); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none;">
               <button type="button" class="btn btn-secondary" id="btn-send-test-msg" disabled style="padding: 0.5rem 1rem; font-size: 0.85rem;">Send</button>
             </div>
           </div>
@@ -351,7 +352,7 @@
           <!-- State Pill Badge (§8, §9) -->
           <div class="transfer-state-pill" id="transfer-state-pill">
             <span class="pill-dot" aria-hidden="true"></span>
-            <span id="transfer-state-text">Transferring</span>
+            <span id="transfer-state-text" role="status">Transferring</span>
           </div>
 
           <h2 id="transfer-heading" class="hero-title" style="font-size: 24px;">Transferring file...</h2>
@@ -441,24 +442,24 @@
 
     <!-- Modals (§8) -->
     <!-- How it works modal -->
-    <div class="modal-overlay" id="modal-how" role="dialog" aria-modal="true" aria-labelledby="modal-how-title">
+    <dialog class="modal-overlay" id="modal-how" aria-labelledby="modal-how-title">
       <div class="modal-card">
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-how-title">How Slipstream works</h2>
         <div class="modal-content" style="margin-top: 1rem;">
           <p>Slipstream is engineered for direct peer-to-peer file transfer between devices on the same local network without cloud storage:</p>
           <ul>
-            <li><strong>Session Creation:</strong> The sender generates a temporary 6-digit code and QR code.</li>
+            <li><strong>Session Creation:</strong> The sender generates a temporary 6-character code and QR code.</li>
             <li><strong>Signaling Only:</strong> The lightweight PHP/MySQL backend coordinates WebRTC connection metadata (SDP offer/answer and ICE candidates).</li>
             <li><strong>Direct Data Channel:</strong> Once connected, browsers communicate directly over an <code>RTCDataChannel</code> with DTLS encryption.</li>
             <li><strong>Zero Server Storage:</strong> Your file bytes never touch the server or any third-party cloud.</li>
           </ul>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- Privacy & Security modal -->
-    <div class="modal-overlay" id="modal-privacy" role="dialog" aria-modal="true" aria-labelledby="modal-privacy-title">
+    <dialog class="modal-overlay" id="modal-privacy" aria-labelledby="modal-privacy-title">
       <div class="modal-card">
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-privacy-title">Privacy & Security</h2>
@@ -472,26 +473,33 @@
           </ul>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- Help & Diagnostics modal -->
-    <div class="modal-overlay" id="modal-help" role="dialog" aria-modal="true" aria-labelledby="modal-help-title">
+    <dialog class="modal-overlay" id="modal-help" aria-labelledby="modal-help-title">
       <div class="modal-card">
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-help-title">Connection Diagnostics & Help</h2>
         <div class="modal-content" style="margin-top: 1rem;">
-          <p><strong>Troubleshooting WebRTC Connections:</strong></p>
+          <h3>Why is my file still waiting?</h3>
+          <p>Each file needs a separate acceptance. The next offer follows verification, rejection or cancellation. After a failure, review the pending queue and select Send queue to retry the remaining files.</p>
+          <h3>Where are my downloads?</h3>
+          <p>Open Verified files to preview or download a completed file. Save anything you need before ending the session.</p>
+          <h3>Why can’t I paste or connect?</h3>
+          <p>If clipboard permission is denied, paste into Share text manually. Pairing requires both browsers to stay open.</p>
           <ul>
             <li>Ensure both devices are connected to the same Wi-Fi or local network.</li>
             <li>Check that your firewall or router allows local UDP traffic.</li>
             <li>If accessing from a mobile device over a LAN IP address, modern browsers require HTTPS to enable secure context features like camera QR scanning.</li>
             <li>Pairing codes expire after 10 minutes; if expired, create a fresh session on the sender device.</li>
           </ul>
+          <p id="connection-summary"></p>
+          <details id="technical-details"><summary>Technical details</summary><dl id="connection-details"></dl></details>
           <button type="button" class="btn btn-secondary" id="btn-download-diagnostics">Download connection report</button>
           <p id="diagnostics-status" role="status"></p>
         </div>
       </div>
-    </div>
+    </dialog>
 
     <!-- Footer (§8) -->
     <footer class="app-footer">
@@ -511,10 +519,10 @@
 
   <!-- Scripts: Vendor QR, API client, WebRTC manager, Phase 2 engines, App logic (§7.4) -->
   <script src="js/vendor/qrcode.min.js"></script>
-  <script src="js/api.js"></script>
+  <script src="js/api.js?v=sharing3"></script>
   <script src="js/application-messages.js"></script>
   <script src="js/session.js"></script>
-  <script src="js/webrtc.js?v=20261122"></script>
+  <script src="js/webrtc.js?v=sharing3"></script>
   <script src="js/transfer-protocol.js"></script>
   <script src="js/file-sender.js"></script>
   <script src="js/file-receiver.js"></script>
@@ -522,7 +530,7 @@
   <script src="js/file-queue.js"></script>
   <script src="js/file-viewer.js"></script>
   <script src="js/share-text.js"></script>
-  <script src="js/app.js?v=20261122"></script>
-  <script src="js/ui-motion.js"></script>
+  <script src="js/app.js?v=sharing3"></script>
+  <script src="js/ui-motion.js?v=sharing3"></script>
 </body>
 </html>

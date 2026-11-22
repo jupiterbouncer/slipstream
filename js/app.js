@@ -10,12 +10,12 @@ document.addEventListener('DOMContentLoaded', () => {
     role: null, // 'host' | 'joiner'
     code: null,
     peer: null,
-    qrInstance: null,
     selectedFile: null,
 
     // Phase 2 Protocol & Transfer Engine State (§5, §7.4)
     sender: null,            // SlipstreamFileSender instance
     receiver: null,          // SlipstreamFileReceiver instance
+    transferProblem: '',
     transferState: 'idle',   // 'idle' | 'hashing' | 'offering' | 'awaiting-decision' | 'transferring' | 'verifying' | 'completed' | 'rejected' | 'cancelled' | 'failed'
     pendingOffer: null,      // Stored offer metadata on receiver
     stats: {
@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const seconds = (start, end) => Math.max(0, Math.floor((end - start) / 1000)) + 's';
     const elapsed = session.transferStarted === null ? '—' : seconds(session.transferStarted, session.transferEnded ?? now);
     byId('session-stats').textContent = [
-      session.verified + ' verified', formatFileSize(session.bytes) + ' verified',
+      session.verified + ' verified files', session.bytes.toLocaleString() + ' verified bytes',
       session.skipped + ' declined or cancelled', 'Transfer ' + elapsed, 'Session ' + seconds(session.started, now),
     ].join(' · ');
   }
@@ -107,6 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
     byId('nickname').value = '';
     testMessageInput.value = '';
     testChatLog.textContent = 'Data channel ready.';
+    transferLabelSender.textContent = 'Sender';
+    transferLabelReceiver.textContent = 'Receiver';
     localDeviceLabel.textContent = 'This device';
     peerDeviceLabel.textContent = 'Peer device';
   }
@@ -115,7 +117,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!session) return;
     if (message.type === 'file-request' || message.type === 'file-request-result') requests?.receive(message);
     if (message.type === 'share-text') textSharing.receive(message.text, peerDeviceLabel.textContent);
-    if (message.type === 'device-name') peerDeviceLabel.textContent = message.name;
+    if (message.type === 'device-name') {
+      peerDeviceLabel.textContent = message.name;
+      (state.role === 'host' ? transferLabelReceiver : transferLabelSender).textContent = message.name;
+    }
   }
 
   function trackTransfer(stage, details = {}) {
@@ -212,7 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const transferLabelReceiver = document.getElementById('transfer-label-receiver');
 
   // Transfer Controls (§8)
-  const transferControls = document.getElementById('transfer-controls');
   const btnCancelTransfer = document.getElementById('btn-cancel-transfer');
   const btnSendAnother = document.getElementById('btn-send-another');
   const btnRetryTransfer = document.getElementById('btn-retry-transfer');
@@ -223,14 +227,38 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalCloseButtons = document.querySelectorAll('[data-close-modal]');
   const modalOverlays = document.querySelectorAll('.modal-overlay');
 
+  function renderDiagnostics() {
+    const snapshot = state.peer?.snapshot() || SlipstreamPeer.lastSnapshot;
+    const list = byId('connection-details');
+    list.replaceChildren();
+    byId('connection-summary').textContent = !snapshot ? 'Start a pairing attempt to see connection details.'
+      : snapshot.channelOpen ? 'The data channel is open.' : 'The data channel is closed or still connecting.';
+    if (!snapshot) return;
+    const fields = {
+      'Pairing stage': snapshot.stage, Signaling: snapshot.signaling, 'ICE gathering': snapshot.gathering,
+      ICE: snapshot.ice, Peer: snapshot.connection, 'Data channel': snapshot.channel,
+      'Local candidate types': snapshot.candidateTypes.local.join(', '),
+      'Remote candidate types': snapshot.candidateTypes.remote.join(', '),
+      'Candidate applications (successful / failed)': snapshot.applied + ' / ' + snapshot.applyFailures,
+      'Attempt duration': snapshot.durationSeconds + 's',
+    };
+    for (const [label, value] of Object.entries(fields)) {
+      const term = document.createElement('dt');
+      const detail = document.createElement('dd');
+      term.textContent = label;
+      detail.textContent = value || 'Not observed';
+      list.append(term, detail);
+    }
+  }
   document.getElementById('btn-download-diagnostics').addEventListener('click', () => {
     const entries = SlipstreamPeer.diagnostics;
     const status = document.getElementById('diagnostics-status');
-    if (!entries.length) {
+    const snapshot = state.peer?.snapshot() || SlipstreamPeer.lastSnapshot;
+    if (!entries.length && !snapshot) {
       status.textContent = 'Start a pairing attempt first, then download its report here.';
       return;
     }
-    const blob = new Blob([JSON.stringify({ build: '20261122', entries }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ build: 'sharing-experience', snapshot, entries }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -247,11 +275,17 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function showScreen(screenName) {
     if (screenName === 'connected' && !state.peer?.isChannelOpen()) return;
+    if (screens[screenName]?.classList.contains('active')) return;
     Object.values(screens).forEach((el) => {
       if (el) el.classList.remove('active');
     });
     if (screens[screenName]) {
       screens[screenName].classList.add('active');
+    }
+    const heading = screens[screenName]?.querySelector('h1, h2');
+    if (heading && !document.querySelector('dialog[open]')) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
     }
     // Keep the existing conversation accessible throughout an open connection.
     if (screenName === 'connected' || screenName === 'transfer') {
@@ -299,8 +333,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function formatFileSize(bytes) {
     if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const sizes = ['B', 'KiB', 'MiB', 'GiB'];
+    const i = Math.max(0, Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k))));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
@@ -331,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
     verifiedFiles.querySelector('ul').replaceChildren();
     verifiedFiles.hidden = true;
     state.pendingOffer = null;
+    state.transferProblem = '';
     state.transferState = 'idle';
     state.stats = {
       bytesTransferred: 0,
@@ -773,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const attempt = ++pairingAttempt;
     const code = joinCodeInput.value.trim().toUpperCase();
 
-    if (!code || code.length < 4) {
+    if (!/^[A-Z2-9]{6}$/.test(code)) {
       joinErrorMsg.textContent = 'Please enter a valid pairing code.';
       joinErrorMsg.style.display = 'block';
       return;
@@ -837,7 +872,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (attempt !== pairingAttempt) return;
       btnSubmitJoin.disabled = false;
       btnSubmitJoin.textContent = 'Connect to device';
-      joinErrorMsg.textContent = err.message || 'Invalid or expired pairing code.';
+      joinErrorMsg.textContent = err.status === 404 || err.status === 410 ? 'Code not found or expired. Ask for a new code.'
+        : err.status === 429 ? 'Too many attempts. Wait a minute before trying again.'
+        : 'Could not check the code. Check your network and try again.';
       joinErrorMsg.style.display = 'block';
     }
   }
@@ -853,6 +890,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const callbacks = {
       peer: state.peer, onProgress: handleTransferProgress, onError: handleTransferError,
       onStateChange(next, details) {
+        if (next === 'failed') {
+          state.transferProblem = ({
+            HASH_MISMATCH: 'Integrity check failed. Discarded the file. Ask the sender to offer it again.',
+            SIZE_MISMATCH: 'Incomplete file discarded. Ask the sender to offer it again.',
+            INVALID_CHUNK_SIZE: 'Unexpected file data. The incomplete file was discarded.',
+          })[details?.code] || (details?.reason === 'timeout' ? 'The peer did not respond in time. Try again when both devices are ready.' : '');
+        }
+        if (next === 'sending' || next === 'receiving') {
+          state.stats.startTime = state.stats.lastProgressTime = performance.now();
+          state.stats.lastBytes = state.stats.speedBps = 0;
+          state.stats.lastPaint = null;
+        }
         trackTransfer(next, details);
         // Completion and failure callbacks carry the verified Blob or error.
         if (['completed', 'failed', 'awaiting-decision', 'ready'].includes(next)) return;
@@ -959,8 +1008,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (incomingSection && incomingFilename) {
       incomingFilename.textContent = offer.name;
       if (incomingFilesize) incomingFilesize.textContent = formatFileSize(offer.size);
-      if (incomingFilemeta) incomingFilemeta.textContent = `${offer.mimeType || 'application/octet-stream'} · from Sender`;
+      if (incomingFilemeta) incomingFilemeta.textContent = `${offer.mimeType || 'application/octet-stream'} · from ${peerDeviceLabel.textContent}`;
       incomingSection.style.display = 'flex';
+      btnAcceptTransfer.focus({ preventScroll: true });
     } else {
       showIncomingOfferFallback(offer);
     }
@@ -1079,8 +1129,6 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function handleTransferProgress({ bytesReceived, totalBytes, percent }) {
     const p = percent !== undefined ? percent : (totalBytes > 0 ? (bytesReceived / totalBytes) * 100 : 0);
-    setTrailProgress(p, 'active');
-
     const now = performance.now();
     const stats = state.stats;
 
@@ -1101,6 +1149,10 @@ document.addEventListener('DOMContentLoaded', () => {
     stats.bytesTransferred = bytesReceived;
     stats.totalBytes = totalBytes;
 
+    // Keep byte accounting exact while limiting DOM writes during multi-chunk bursts.
+    if (stats.lastPaint != null && now - stats.lastPaint < 100 && bytesReceived !== totalBytes) return;
+    stats.lastPaint = now;
+    setTrailProgress(p, 'active');
     let subtext = `${formatFileSize(bytesReceived)} of ${formatFileSize(totalBytes)}`;
     let speedEtaStr = '';
     if (stats.speedBps > 0) {
@@ -1140,9 +1192,10 @@ document.addEventListener('DOMContentLoaded', () => {
    * Handle transfer errors and broken connection trail (§4.10, §8).
    */
   function handleTransferError(err) {
-    console.error('Transfer error:', err);
+    console.warn('[Slipstream] Transfer interrupted');
     showScreen('transfer');
-    updateTransferUIState('failed', err);
+    updateTransferUIState('failed', { message: state.transferProblem || 'Transfer interrupted. Check the connection and try again.' });
+    state.transferProblem = '';
   }
 
   /**
@@ -1188,7 +1241,7 @@ document.addEventListener('DOMContentLoaded', () => {
       recordActivity('You shared a message');
       testMessageInput.value = '';
     } catch (err) {
-      alert(`Send failed: ${err.message}`);
+      appendChatLog('System', 'Could not send. Check the connection and try again.');
     }
   }
 
@@ -1352,6 +1405,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     localDeviceLabel.textContent = byId('nickname').value = name;
+    (state.role === 'host' ? transferLabelSender : transferLabelReceiver).textContent = name;
     byId('name-feedback').textContent = 'Name shared.';
   });
   byId('new-code').addEventListener('click', regenerateCode);
@@ -1398,28 +1452,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Modal open/close handlers
-  modalButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const modalId = btn.getAttribute('data-modal');
-      const targetModal = document.getElementById(modalId);
-      if (targetModal) targetModal.classList.add('open');
-    });
-  });
-
-  modalCloseButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      modalOverlays.forEach((m) => m.classList.remove('open'));
-    });
-  });
-
-  modalOverlays.forEach((modal) => {
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.classList.remove('open');
+  // Native dialogs contain keyboard focus and restore it to the invoking control.
+  let diagnosticsTimer;
+  for (const button of modalButtons) {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      const dialog = byId(button.dataset.modal);
+      if (dialog.id === 'modal-help') {
+        renderDiagnostics();
+        clearInterval(diagnosticsTimer);
+        diagnosticsTimer = setInterval(renderDiagnostics, 1000);
       }
+      dialog.showModal();
     });
-  });
+  }
+  for (const button of modalCloseButtons) button.onclick = () => button.closest('dialog').close();
+  for (const dialog of modalOverlays) {
+    dialog.onclick = event => { if (event.target === dialog) dialog.close(); };
+    dialog.onclose = () => { if (dialog.id === 'modal-help') clearInterval(diagnosticsTimer); };
+  }
 
   // Check URL parameters for ?join=CODE
   const urlParams = new URLSearchParams(window.location.search);

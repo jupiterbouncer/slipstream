@@ -144,11 +144,11 @@ body {
 
 .header-status .status-icon-check {
   display: none;
-  color: var(--color-vector);
+  color: #216e59;
 }
 
 .header-status.connected {
-  color: var(--color-vector);
+  color: #216e59;
   font-weight: 600;
 }
 
@@ -353,7 +353,7 @@ h1, h2, h3 {
 /* Coral background sweep on hover & compression on click */
 .btn-primary {
   background-color: var(--color-coral);
-  color: var(--color-white);
+  color: var(--color-graphite);
 }
 
 .btn-primary::before {
@@ -703,12 +703,12 @@ h1, h2, h3 {
 
 .device-glyph.active {
   border-color: var(--color-coral);
-  color: var(--color-coral);
+  color: #a53520;
 }
 
 .device-glyph.success {
   border-color: var(--color-vector);
-  color: var(--color-vector);
+  color: #216e59;
 }
 
 .device-glyph.device-connected {
@@ -798,7 +798,7 @@ h1, h2, h3 {
 
 .device-glyph.receiving {
   border-color: var(--color-coral);
-  color: var(--color-coral);
+  color: #a53520;
 }
 
 .device-glyph.broken {
@@ -978,7 +978,7 @@ h1, h2, h3 {
 }
 
 .transfer-file-icon {
-  color: var(--color-coral);
+  color: #a53520;
   flex-shrink: 0;
 }
 
@@ -1085,7 +1085,7 @@ h1, h2, h3 {
 }
 
 .file-preview-icon {
-  color: var(--color-coral);
+  color: #a53520;
   flex-shrink: 0;
 }
 
@@ -1193,7 +1193,7 @@ h1, h2, h3 {
   font-family: var(--font-heading);
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-coral);
+  color: #a53520;
   background-color: rgba(255, 90, 60, 0.08);
   border: 1px solid rgba(255, 90, 60, 0.2);
   padding: 3px 10px;
@@ -1240,7 +1240,7 @@ h1, h2, h3 {
   height: 42px;
   background-color: rgba(255, 90, 60, 0.08);
   border-radius: var(--radius-sm);
-  color: var(--color-coral);
+  color: #a53520;
   flex-shrink: 0;
 }
 
@@ -1284,7 +1284,7 @@ h1, h2, h3 {
 
 .incoming-security-notice svg {
   flex-shrink: 0;
-  color: var(--color-vector);
+  color: #216e59;
 }
 
 .incoming-btn-group {
@@ -1378,7 +1378,12 @@ h1, h2, h3 {
   padding: max(16px, var(--safe-top)) max(16px, var(--safe-right)) max(16px, var(--safe-bottom)) max(16px, var(--safe-left));
 }
 
-.modal-overlay.open {
+.modal-overlay[open] {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
   display: flex;
 }
 
@@ -1470,7 +1475,7 @@ h1, h2, h3 {
   width: 82px;
   height: 44px;
   margin: 0 auto 8px;
-  color: var(--color-coral);
+  color: #a53520;
   pointer-events: none;
 }
 
@@ -1521,7 +1526,7 @@ h1, h2, h3 {
   width: 36px;
   height: 32px;
   flex: none;
-  color: var(--color-coral);
+  color: #a53520;
   pointer-events: none;
 }
 
@@ -1578,7 +1583,7 @@ h1, h2, h3 {
   bottom: -4px;
   width: 19px;
   height: 25px;
-  color: var(--color-vector);
+  color: #216e59;
 }
 
 .verified-file i { left: 6px; opacity: 0; }
@@ -1818,7 +1823,8 @@ h1, h2, h3 {
   }
 
   .device-name {
-    display: none; /* Hide device label text on ultra-narrow viewports to prevent line break */
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .connected-device-bar {
@@ -1885,3 +1891,10 @@ h1, h2, h3 {
 .preview-content object { width: 100%; height: 55dvh; }
 
 [hidden] { display: none !important; }
+
+:where(button, a, input, textarea, summary, [tabindex]):focus-visible { outline: 3px solid #175c50 !important; outline-offset: 2px; }
+.device-item, .device-name, .connected-card { min-width: 0; }
+.device-name, #pairing-feedback, .modal-card { overflow-wrap: anywhere; }
+#connection-details dt { font-weight: 600; }
+#connection-details dd { margin: 0 0 .3rem; }
+#technical-details summary { cursor: pointer; padding: .75rem 0; }

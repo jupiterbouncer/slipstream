@@ -1,6 +1,6 @@
 # Application messages
 
-Both peers exchange JSON strings on the existing reliable ordered data channel. The envelope uses `protocol: "slipstream-app"`, numeric `version: 1`, and a string `type`. The local channel determines the sender's role. Unknown types, invalid fields and unsupported versions are ignored. Messages belong only to the current peer connection.
+Both peers exchange JSON strings on the existing reliable ordered data channel. The envelope uses `protocol: "slipstream-app"`, numeric `version: 1`, and a string `type`. The local channel determines the sender's role. Application envelopes are limited to 65,536 UTF-16 code units on the wire, allowing for JSON escaping. Unknown types, invalid fields and unsupported versions are ignored. Messages belong only to the current peer connection.
 
 | Type | Sender | Additional fields |
 | --- | --- | --- |

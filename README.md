@@ -6,7 +6,7 @@ Slipstream is a browser-based file-transfer project designed to send a file dire
 
 The PHP/MySQL server is used only for temporary signaling. It coordinates the connection but does **not** receive or store file bytes.
 
-> **Project status:** This README describes the intended product and architecture. Update the implementation status and setup instructions as the project is built; do not mark planned features as complete until they have been tested.
+**Release status.** Phase 3 adds browser-local sharing to the existing single-file engine. Physical laptop-to-iPhone connectivity remains a separate release blocker.
 
 ---
 
@@ -53,14 +53,23 @@ Slipstream is a single-purpose flow rather than a dashboard.
 | Done                       | Receiver downloads the verified file; sender can send another             |
 | Error                      | A broken/faded trail and clear message explain what went wrong            |
 
-Supporting features are deliberately secondary:
+### Sharing in a connected session
 
-- **Activity:** optional, current-session-only transfer records; never permanent history.
-- **Transfer queue:** optional sequential multi-file transfers, one file at a time.
-- **Help & diagnostics:** guidance for camera permissions, HTTPS, expired codes, browser compatibility and direct-connection failures.
-- **How it works:** explains the signaling and direct-transfer architecture.
-- **Privacy & security:** explains temporary signaling data, direct transfer and encryption accurately.
-- **Settings:** optional small panel for preferences such as sound notifications and reduced motion.
+- **Files.** Choose or drop multiple files, review names, types and sizes, and remove or clear pending entries. **Send queue** offers one file at a time in selection order. Each file has a 100 MiB limit and requires a separate acceptance. Rejected and cancelled entries are skipped. A failure pauses the queue so you can review the remaining files.
+- **Progress and completion.** The sender shows receiver-confirmed bytes. Queuing all chunks moves the sender to “Awaiting verification”. Only the receiver's SHA-256 acknowledgment marks the sender complete. Verified files stay available in the receiving tab until removed or the session is ended. Download files you want to keep.
+- **Previews.** Preview a local file before sending or a verified file after receipt. Supported formats include JPEG, PNG, GIF, WebP, browser-native PDFs and the first 32 KiB of text or common source files. Markup and code display as text. Unsupported files can still be transferred.
+- **Share text.** Both peers can type or paste up to 8 KiB of UTF-8 text, including code or an HTTP(S) link. Copy or open received content explicitly. If clipboard permission is denied, use the text field and your browser's manual copy/paste controls.
+- **Request file.** The receiver can send one request at a time. The sender can decline or choose a local file. Approval places the file in the sender's ordinary queue. Requests expire after one minute.
+- **Activity and statistics.** Open the activity section for timestamped events, verified file and byte totals, declines and cancellations, transfer time and session time. Clearing activity preserves the counters. Names, activity, clipboard-sharing content and selected files belong to this session and never go to PHP/MySQL.
+- **Connection.** Save a temporary device name, inspect diagnostics or end the session. Ending an active transfer asks for confirmation. Before pairing, copy either the code or link, or select **New code** to retire the previous signaling session.
+
+### Connection help
+
+An invalid or expired code requires a fresh sender code. After a disconnect use **Try again** to pair again. An incomplete or mismatched file is discarded. Offer the original file again once both peers are ready.
+
+**Help → Technical details** shows the last pairing stage, signaling and ICE states, candidate types, successful and failed candidate application attempts, elapsed time and whether the data channel is open. Missing information means it was not observed. A report interrupted by closure cannot establish that no candidate pair existed. Reports omit SDP, addresses and credentials.
+
+The [application message reference](APPLICATION_MESSAGES.md) describes the auxiliary JSON messages. [Phase 2](PHASE2_PROTOCOL.md) specifies the binary transfer contract.
 
 ## Technology stack
 
@@ -127,13 +136,6 @@ For the ICE `GET`, `role` identifies whose candidates are being retrieved. The h
 - Live progress on both devices through the Slipstream trail.
 - Cancel, completion and explicit connection/error states.
 - Testing on two genuinely separate physical devices on the same local network.
-
-### Optional after the core is reliable
-
-- Session-only Activity panel.
-- Sequential multi-file queue.
-- Expanded Help & connection diagnostics.
-- Small Settings panel.
 
 ### Out of scope
 
@@ -264,6 +266,10 @@ slipstream/
    - Enter the 6-character pairing code or scan the QR code.
    - Once connected, send a test message through the Phase 1 test box to confirm direct WebRTC peer transmission with zero server routing.
 
+## Automated checks
+
+Run `node --test qa/*.test.cjs` with Node 22 or later. For the two-browser integration run, start the configured local PHP/MySQL app with `php -S 127.0.0.1:8137 router.php`, then run `node qa/browser-recovery.mjs`. The script starts two temporary Chrome profiles, creates its own pairing sessions and compares downloaded bytes. Set `CHROME_BIN` if Chrome is installed elsewhere.
+
 ## Testing checklist
 
 - [X] Create a session and receive a valid short code and expiry.
@@ -289,7 +295,7 @@ slipstream/
 - There is no TURN relay or server-side file-transfer fallback.
 - Pairing uses an explicit QR code or short code; there is no automatic nearby-device discovery.
 - The server temporarily handles signaling metadata, but it does not handle file bytes.
-- Optional Activity, multi-file queue and Settings features should not delay the reliable single-file transfer experience.
+- Received files and queued selections use browser memory. Save and remove verified files to reclaim memory during a long session.
 
 ---
 

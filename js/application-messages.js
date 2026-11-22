@@ -14,7 +14,7 @@ const AppMessages = {
     }
     if (message.type === 'share-text') return typeof message.text === 'string'
       && message.text.length <= 8192 && !!message.text.trim() && new TextEncoder().encode(message.text).length <= 8192;
-    return message.type === 'device-name' && !!this.nickname(message.name)
+    return message.type === 'device-name' && typeof message.name === 'string' && message.name.length <= 32 && !!message.name
       && message.name === this.nickname(message.name);
   },
 

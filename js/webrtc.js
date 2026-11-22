@@ -25,7 +25,15 @@ class SlipstreamPeer {
   }) {
     this.role = role; // 'host' | 'joiner'
     this.code = code;
-    this.onStatusChange = onStatusChange || (() => {});
+    this.stage = 'Preparing connection';
+    this.started = Date.now();
+    this.applied = 0;
+    this.applyFailures = 0;
+    this.candidateTypes = { local: [], remote: [] };
+    this.onStatusChange = status => {
+      this.stage = status;
+      onStatusChange?.(status);
+    };
     this.onChannelOpen = onChannelOpen || (() => {});
     this.onChannelMessage = onChannelMessage || (() => {});
     this.onControlMessage = onControlMessage || (() => {});
@@ -45,6 +53,7 @@ class SlipstreamPeer {
     this.disconnectTimer = null;
     this.candidateCursor = 0;
     this.receiveQueue = Promise.resolve();
+    SlipstreamPeer.lastSnapshot = null;
     SlipstreamPeer.diagnostics = [];
 
     // Standard STUN configuration for local candidate discovery
@@ -231,9 +240,11 @@ class SlipstreamPeer {
       if (!this.processedCandidates.has(candidateKey)) {
         try {
           await this.pc.addIceCandidate(new RTCIceCandidate(c));
+          this.applied++;
           this.log('remote ICE candidate accepted', { index: this.candidateCursor });
         } catch (candidateErr) {
           if (signal.aborted) return;
+          this.applyFailures++;
           this.log('remote ICE candidate rejected', { reason: candidateErr.name, index: this.candidateCursor });
           if (candidateErr.name === 'InvalidStateError') throw candidateErr;
         }
@@ -283,7 +294,7 @@ class SlipstreamPeer {
       if (message?.protocol === 'slipstream') this.onControlMessage(message);
       else if (message?.protocol === 'slipstream-app') {
         const senderRole = this.role === 'host' ? 'joiner' : 'host';
-        if (AppMessages.valid(message, senderRole)) this.onApplicationMessage(message);
+        if (data.length <= 64 * 1024 && AppMessages.valid(message, senderRole)) this.onApplicationMessage(message);
       }
       else if (message?.protocol === undefined && message?.type === 'text' && typeof message.message === 'string') {
         this.onChannelMessage(data);
@@ -376,6 +387,16 @@ class SlipstreamPeer {
     if (SlipstreamPeer.diagnostics.length > 200) SlipstreamPeer.diagnostics.shift();
   }
 
+  snapshot() {
+    return {
+      stage: this.stage, signaling: this.pc?.signalingState, gathering: this.pc?.iceGatheringState,
+      ice: this.pc?.iceConnectionState, connection: this.pc?.connectionState,
+      channel: this.dataChannel?.readyState || 'unavailable', channelOpen: this.isChannelOpen(),
+      applied: this.applied, applyFailures: this.applyFailures, candidateTypes: this.candidateTypes,
+      durationSeconds: Math.floor((Date.now() - this.started) / 1000),
+    };
+  }
+
   logCandidatePairs() {
     const pc = this.pc;
     if (!pc?.getStats || this.statsPending) return;
@@ -396,6 +417,9 @@ class SlipstreamPeer {
           requestsReceived: row.requestsReceived, responsesSent: row.responsesSent,
         });
       });
+      for (const side of ['local', 'remote']) {
+        this.candidateTypes[side] = [...new Set(candidates.filter(c => c.side === side + '-candidate').map(c => c.type))];
+      }
       this.log('ICE candidate pairs', { candidates, pairs });
     }).catch(() => {
       if (this.pc === pc) this.log('ICE statistics unavailable');
@@ -426,6 +450,9 @@ class SlipstreamPeer {
    * Cleanly close all WebRTC and signaling resources.
    */
   close() {
+    if (this.isClosed) return;
+    if (this.statsPending) this.log('ICE statistics interrupted by closure');
+    SlipstreamPeer.lastSnapshot = { ...this.snapshot(), channel: 'closed', channelOpen: false };
     this.isClosed = true;
     clearTimeout(this.disconnectTimer);
     this.stopPolling();

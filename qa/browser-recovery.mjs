@@ -1,3 +1,4 @@
+import { checkSharing } from './browser-sharing.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -74,23 +75,50 @@ async function browser(role) {
   }
   async function click(selector) {
     const point = await waitFor(selector, () => evaluate(`(() => {
+      if (document.readyState !== 'complete') return;
       const e = document.querySelector(${JSON.stringify(selector)});
       if (!e || !e.getClientRects().length || e.disabled) return;
       e.scrollIntoView({block:'center'});
       const r = e.getBoundingClientRect();
-      return { x: r.x + r.width/2, y: r.y + r.height/2 };
-    })()`));
+      const point = { x: r.x + r.width/2, y: r.y + r.height/2 };
+      if (e.contains(document.elementFromPoint(point.x, point.y))) return point;
+    })()`)).catch(async error => {
+      const screen = await evaluate("document.querySelector('.screen-view.active')?.id");
+      throw new Error(error.message + ' on ' + screen);
+    });
     for (const type of ['mousePressed', 'mouseReleased'])
       await command('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...point });
+  }
+  async function selectFiles(selector, files) {
+    // A fresh document query avoids retaining stale DevTools node IDs across UI changes.
+    const { root } = await command('DOM.getDocument');
+    const { nodeId } = await command('DOM.querySelector', { nodeId: root.nodeId, selector });
+    await command('DOM.setFileInputFiles', { nodeId, files });
   }
   await command('Page.enable');
   closeBrowsers.push(() => command('Browser.close'));
   console.log(role + ' Chrome ready');
-  return { command, evaluate, click };
+  return { command, evaluate, click, selectFiles };
 }
 
 try {
   const [sender, receiver] = await Promise.all([browser('sender'), browser('receiver')]);
+  await sender.command('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.RTCPeerConnection = class extends RTCPeerConnection {
+      constructor(...args) {
+        super(...args);
+        window.appliedCandidates = { accepted: 0, failed: 0 };
+      }
+      async addIceCandidate(candidate) {
+        try {
+          await super.addIceCandidate(candidate);
+          window.appliedCandidates.accepted++;
+        } catch (error) {
+          window.appliedCandidates.failed++;
+          throw error;
+        }
+      }
+    };` });
   await receiver.command('Page.addScriptToEvaluateOnNewDocument',{source:'const NativePeer=RTCPeerConnection; window.RTCPeerConnection=class extends NativePeer { constructor(...args){super(...args);window.testPeer=this;} };'});
   await receiver.command('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:true});
   const downloadPath = path.join(temp, 'downloads');
@@ -106,7 +134,11 @@ try {
     const code = await tab.evaluate("document.querySelector('#host-code-text')?.textContent");
     return /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/.test(code) && code;
   });
+  const replaced = await codeOf(sender);
+  await sender.click('#new-code');
+  await waitFor('regenerated code', () => sender.evaluate("document.querySelector('#new-code').disabled === false && document.querySelector('#host-code-text').textContent !== " + JSON.stringify(replaced)));
   const first = await codeOf(sender);
+  assert.equal(await sender.evaluate("Api.getSession(" + JSON.stringify(replaced) + ").then(() => 200, e => e.status)"), 404);
   await sender.evaluate("Api.deleteSession("+JSON.stringify(first)+")");
   const failure = tab => waitFor('connection failure', () => tab.evaluate("document.querySelector('#transfer-heading').textContent === 'Connection failed'"));
   await failure(sender);
@@ -116,7 +148,7 @@ try {
   const second = await codeOf(sender);
   assert.notEqual(second,first); assert.ok(await gated(sender));
   await receiver.command('Page.navigate',{url:origin});
-  await waitFor('receiver app',()=>receiver.evaluate("typeof Api === 'object'"));
+  await waitFor('receiver app',()=>receiver.evaluate("document.readyState === 'complete' && typeof Api === 'object'"));
   await receiver.evaluate("window.realAnswer = Api.sendAnswer; Api.sendAnswer = async () => { throw Object.assign(new Error('Injected rejection'), {status:403}); }");
   await receiver.click('#btn-start-receive');
   await receiver.evaluate("document.querySelector('#join-code-input').value="+JSON.stringify(second));
@@ -152,9 +184,7 @@ try {
   const name = 'slipstream-test.bin', original = randomBytes(1024 * 1024 + 1);
   const fixture = path.join(temp, name);
   await writeFile(fixture, original);
-  const { root } = await sender.command('DOM.getDocument');
-  const { nodeId } = await sender.command('DOM.querySelector', { nodeId: root.nodeId, selector: '#file-input' });
-  await sender.command('DOM.setFileInputFiles', { nodeId, files: [fixture] });
+  await sender.selectFiles('#file-input', [fixture]);
   await sender.click('#btn-send-file');
   await waitFor('offer',()=>receiver.evaluate("!!document.querySelector('#btn-accept-transfer').getClientRects().length"));
   await receiver.evaluate("document.querySelector('#test-message-input').value='chat during offer'");
@@ -188,8 +218,9 @@ try {
   const bytes = await waitFor('download', () => readFile(path.join(downloadPath, name)).catch(() => null));
   assert.deepEqual(bytes, original);
   console.log(origin, bytes.length, 'bytes verified and downloaded. SHA-256', createHash('sha256').update(bytes).digest('hex'));
+  await checkSharing({ sender, receiver, temp, waitFor });
   await sender.click('#btn-send-another');
-  await sender.command('DOM.setFileInputFiles', {nodeId,files:[fixture]});
+  await sender.selectFiles('#file-input', [fixture]);
   await sender.click('#btn-send-file');
   await waitFor('second offer',()=>receiver.evaluate("!!document.querySelector('#btn-accept-transfer').getClientRects().length"));
   await receiver.evaluate("window.testPeer.close()");
@@ -200,8 +231,13 @@ try {
   const reportBytes = await waitFor('connection report download', () =>
     readFile(path.join(downloadPath, 'slipstream-connection.json')).catch(() => null));
   const report = JSON.parse(reportBytes);
+  assert.equal(report.snapshot.channelOpen, false);
+  // A local channel can open before the next polling pass applies any remote candidates.
+  const actual = await sender.evaluate('window.appliedCandidates');
+  assert.equal(report.snapshot.applied, actual.accepted);
+  assert.equal(report.snapshot.applyFailures, actual.failed);
+  assert.ok(await sender.evaluate("document.querySelector('#received-text').children.length === 0 && document.querySelector('#activity-list').children.length === 0"));
   assert.ok(report.entries.some(entry => entry.event === 'ICE candidate pairs'));
-  assert.ok(report.entries.some(entry => entry.event === 'remote ICE candidate accepted'));
   assert.ok(!reportBytes.toString().includes('localCandidateId'));
   await sender.click('#modal-help [data-close-modal]');
   console.log('Connection report downloaded after channel closure.');
@@ -209,6 +245,9 @@ try {
   assert.notEqual(await codeOf(sender),code);
   await sender.evaluate("document.querySelector('#brand-link').click()");
   console.log('Actual channel close interrupted the second offer and Retry created a fresh pairing.');
+} catch (error) {
+  console.error(error.message);
+  throw error;
 } finally {
   await Promise.allSettled(closeBrowsers.map(close => close()));
   for (const socket of sockets) socket.close();
