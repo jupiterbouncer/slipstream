@@ -33,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const textSharing = setupTextSharing(byId, () => state.peer, recordActivity);
   const verifiedFiles = byId('verified-files');
   const downloads = new Set();
+  let requests = null;
+  let pickerRequest = null;
   let queue = null;
   let session = null;
   let sessionTimer;
@@ -65,6 +67,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function beginSession() {
     session = new SharingSession();
     if (state.role === 'host') queue = new FileQueue(startFileSend, renderQueue);
+    requests = new FileRequests(state.peer, message => {
+      byId('request-status').textContent = message;
+      byId('request-file').disabled = !!requests.pending;
+      byId('request-choice').hidden = !(requests.pending && state.role === 'host');
+      recordActivity(message);
+    });
+    byId('request-file').hidden = state.role !== 'joiner';
     renderQueue();
     byId('session-tools').hidden = false;
     byId('nickname').value = localDeviceLabel.textContent = state.role === 'host' ? 'Sender' : 'Receiver';
@@ -75,6 +84,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function clearSession() {
+    requests?.close();
+    requests = pickerRequest = null;
+    byId('request-choice').hidden = true;
+    byId('request-file').disabled = false;
+    byId('request-picker').value = byId('request-status').textContent = '';
     const previousQueue = queue;
     queue = null;
     previousQueue?.clear();
@@ -99,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function receiveApplicationMessage(message) {
     if (!session) return;
+    if (message.type === 'file-request' || message.type === 'file-request-result') requests?.receive(message);
     if (message.type === 'share-text') textSharing.receive(message.text, peerDeviceLabel.textContent);
     if (message.type === 'device-name') peerDeviceLabel.textContent = message.name;
   }
@@ -1253,6 +1268,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  byId('request-file').onclick = () => requests?.request();
+  byId('decline-request').onclick = () => requests?.respond(requests.pending, 'declined');
+  const requestPicker = byId('request-picker');
+  byId('approve-request').onclick = () => {
+    if (!requests?.pending) return;
+    pickerRequest = requests.pending;
+    requestPicker.value = '';
+    requestPicker.click();
+  };
+  requestPicker.oncancel = () => requests?.respond(pickerRequest, 'declined');
+  requestPicker.onchange = () => {
+    const file = requestPicker.files[0];
+    requestPicker.value = '';
+    if (!pickerRequest || requests?.pending !== pickerRequest) return;
+    if (!file || file.size > TransferProtocol.maxFileSize) {
+      requests.respond(pickerRequest, 'declined');
+      byId('request-status').textContent = 'Request declined. Choose a file of 100 MiB or less next time.';
+      return;
+    }
+    if (!requests.respond(pickerRequest, 'approved')) return;
+    const wasEmpty = queue.pending.length === 0;
+    queue.add([file]);
+    // Do not start other files the user has queued but has not chosen to send yet.
+    if (wasEmpty) void queue.run();
+  };
   byId('clear-queue').onclick = () => queue?.clear();
   btnSendFile.onclick = () => queue?.run();
 

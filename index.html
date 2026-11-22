@@ -281,6 +281,16 @@
             <h3>Verified files</h3><ul class="file-list"></ul>
           </section>
           <div id="session-tools" class="session-tools" hidden>
+            <section aria-label="File requests">
+              <button id="request-file" class="btn btn-secondary" hidden>Request file</button>
+              <div id="request-choice" hidden>
+                <p>Your peer is requesting a file.</p>
+                <button id="approve-request" class="btn btn-primary">Choose a file to offer</button>
+                <button id="decline-request" class="btn btn-secondary">Decline request</button>
+              </div>
+              <input type="file" id="request-picker" hidden>
+              <p id="request-status" role="status"></p>
+            </section>
             <section id="queue-panel" hidden>
               <h3>Pending files</h3>
               <ol id="queue-list" class="file-list"></ol>
@@ -508,6 +518,7 @@
   <script src="js/transfer-protocol.js"></script>
   <script src="js/file-sender.js"></script>
   <script src="js/file-receiver.js"></script>
+  <script src="js/file-requests.js"></script>
   <script src="js/file-queue.js"></script>
   <script src="js/file-viewer.js"></script>
   <script src="js/share-text.js"></script>

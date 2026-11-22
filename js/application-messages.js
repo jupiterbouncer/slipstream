@@ -7,6 +7,11 @@ const AppMessages = {
   valid(message, senderRole) {
     if (!['host', 'joiner'].includes(senderRole) || message?.protocol !== 'slipstream-app'
       || message.version !== 1) return false;
+    if (message.type === 'file-request' || message.type === 'file-request-result') {
+      if (!TransferProtocol.validId(message.requestId)) return false;
+      if (message.type === 'file-request') return senderRole === 'joiner';
+      return senderRole === 'host' && ['approved', 'declined'].includes(message.decision);
+    }
     if (message.type === 'share-text') return typeof message.text === 'string'
       && message.text.length <= 8192 && !!message.text.trim() && new TextEncoder().encode(message.text).length <= 8192;
     return message.type === 'device-name' && !!this.nickname(message.name)
