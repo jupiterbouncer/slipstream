@@ -30,6 +30,81 @@ document.addEventListener('DOMContentLoaded', () => {
     },
   };
 
+  const byId = id => document.getElementById(id);
+  let session = null;
+  let sessionTimer;
+  let transferName = '';
+  let activityRows = 0;
+
+  function renderSession() {
+    if (!session) return;
+    const list = byId('activity-list');
+    for (; activityRows < session.activity.length; activityRows++) {
+      const event = session.activity[activityRows];
+      const row = document.createElement('li');
+      row.textContent = new Date(event.time).toLocaleTimeString() + ' · ' + event.message;
+      list.append(row);
+    }
+    const now = Date.now();
+    const seconds = (start, end) => Math.max(0, Math.floor((end - start) / 1000)) + 's';
+    const elapsed = session.transferStarted === null ? '—' : seconds(session.transferStarted, session.transferEnded ?? now);
+    byId('session-stats').textContent = [
+      session.verified + ' verified', formatFileSize(session.bytes) + ' verified',
+      session.skipped + ' declined or cancelled', 'Transfer ' + elapsed, 'Session ' + seconds(session.started, now),
+    ].join(' · ');
+  }
+
+  function recordActivity(message) {
+    session?.record(message);
+    renderSession();
+  }
+
+  function beginSession() {
+    session = new SharingSession();
+    byId('session-tools').hidden = false;
+    byId('nickname').value = localDeviceLabel.textContent = state.role === 'host' ? 'Sender' : 'Receiver';
+    peerDeviceLabel.textContent = state.role === 'host' ? 'Receiver' : 'Sender';
+    recordActivity(peerDeviceLabel.textContent + ' connected');
+    AppMessages.send(state.peer, 'device-name', { name: localDeviceLabel.textContent });
+    sessionTimer = setInterval(() => { if (byId('activity-panel').open) renderSession(); }, 1000);
+  }
+
+  function clearSession() {
+    clearInterval(sessionTimer);
+    session = null;
+    transferName = '';
+    activityRows = 0;
+    byId('activity-list').replaceChildren();
+    byId('session-tools').hidden = true;
+    byId('session-stats').textContent = byId('name-feedback').textContent = '';
+    byId('nickname').value = '';
+    testMessageInput.value = '';
+    testChatLog.textContent = 'Data channel ready.';
+    localDeviceLabel.textContent = 'This device';
+    peerDeviceLabel.textContent = 'Peer device';
+  }
+
+  function receiveApplicationMessage(message) {
+    if (!session) return;
+    if (message.type === 'device-name') peerDeviceLabel.textContent = message.name;
+  }
+
+  function trackTransfer(stage, details = {}) {
+    const active = (state.sender || state.receiver)?.active;
+    const id = details.transferId || active?.id;
+    if (active?.file) transferName = active.file.name;
+    const labels = {
+      'awaiting-acceptance': 'Offered', 'awaiting-decision': 'Offered', ready: 'Accepted',
+      sending: 'Started', receiving: 'Started', completed: 'Verified',
+      rejected: 'Rejected', failed: 'Failed', cancelled: 'Cancelled',
+    };
+    if (stage === 'sending') session?.transfer(id, 'Accepted', transferName);
+    if (labels[stage]) {
+      session?.transfer(id, labels[stage], transferName, details.bytesReceived);
+      renderSession();
+    }
+  }
+
   // DOM Elements - Screens
   const screens = {
     home: document.getElementById('screen-home'),
@@ -157,7 +232,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Keep the existing conversation accessible throughout an open connection.
     if (screenName === 'connected' || screenName === 'transfer') {
-      screens[screenName].querySelector('.connected-card').appendChild(chatBox);
+      const card = screens[screenName].querySelector('.connected-card');
+      if (chatBox.parentElement !== card) card.append(byId('session-tools'), chatBox);
     }
   }
 
@@ -210,6 +286,9 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   let pairingAttempt = 0;
   function resetApp() {
+    clearSession();
+    pairingControls(false);
+    byId('pairing-feedback').textContent = '';
     pairingAttempt++;
     btnSubmitJoin.disabled = false;
     btnSubmitJoin.textContent = 'Connect to device';
@@ -557,6 +636,34 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Host Flow (Send a file)
    */
+  function pairingControls(enabled) {
+    for (const id of ['copy-code', 'copy-link', 'new-code']) byId(id).disabled = !enabled;
+  }
+
+  function pairingLink() {
+    const link = new URL(location.href);
+    link.searchParams.set('join', state.code);
+    return link.href;
+  }
+
+  async function regenerateCode() {
+    if (!state.code || state.peer?.isChannelOpen() || state.role !== 'host') return;
+    const attempt = ++pairingAttempt;
+    pairingControls(false);
+    state.peer?.close();
+    state.peer = null;
+    const removed = await Api.deleteSession(state.code);
+    if (attempt !== pairingAttempt) return;
+    if (!removed) {
+      byId('pairing-feedback').textContent = 'Could not retire this code. Check your connection and try New code again.';
+      byId('new-code').disabled = false;
+      return;
+    }
+    state.code = null;
+    byId('pairing-feedback').textContent = '';
+    await startHostFlow();
+  }
+
   async function startHostFlow() {
     const attempt = ++pairingAttempt;
     state.role = 'host';
@@ -569,13 +676,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (attempt !== pairingAttempt) return Api.deleteSession(session.code);
       state.code = session.code;
 
+      pairingControls(true);
       hostCodeText.textContent = session.code;
       hostStatusMsg.textContent = 'Waiting for peer device to connect...';
 
       // Generate join link for QR code
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.set('join', session.code);
-      const joinUrl = currentUrl.toString();
+      const joinUrl = pairingLink();
 
       // Responsive QR dimension for narrow mobile viewports
       const qrContainerWidth = qrDisplay.clientWidth || 200;
@@ -606,8 +712,8 @@ document.addEventListener('DOMContentLoaded', () => {
         onChannelOpen: () => {
           if (attempt !== pairingAttempt || !state.peer?.isChannelOpen()) return;
           setHeaderConnected(true);
-          localDeviceLabel.textContent = 'Host (Sender)';
-          peerDeviceLabel.textContent = 'Receiver';
+          beginSession();
+          pairingControls(false);
           if (senderFileSection) senderFileSection.style.display = 'block';
           if (receiverFileSection) receiverFileSection.style.display = 'none';
 
@@ -622,6 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
           showScreen('connected');
           appendChatLog('System', 'Direct WebRTC data channel connected!');
         },
+        onApplicationMessage: receiveApplicationMessage,
         onControlMessage: (message) => {
           handleIncomingControlMessage(message);
         },
@@ -687,8 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btnSubmitJoin.disabled = false;
           btnSubmitJoin.textContent = 'Connect to device';
           setHeaderConnected(true);
-          localDeviceLabel.textContent = 'Joiner (Receiver)';
-          peerDeviceLabel.textContent = 'Sender';
+          beginSession();
           if (senderFileSection) senderFileSection.style.display = 'none';
           if (receiverFileSection) receiverFileSection.style.display = 'block';
           if (receiverWaitingBox) receiverWaitingBox.style.display = 'flex';
@@ -705,6 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
           showScreen('connected');
           appendChatLog('System', 'Direct WebRTC data channel connected!');
         },
+        onApplicationMessage: receiveApplicationMessage,
         onControlMessage: (message) => {
           handleIncomingControlMessage(message);
         },
@@ -739,6 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const callbacks = {
       peer: state.peer, onProgress: handleTransferProgress, onError: handleTransferError,
       onStateChange(next, details) {
+        trackTransfer(next, details);
         // Completion and failure callbacks carry the verified Blob or error.
         if (['completed', 'failed', 'awaiting-decision', 'ready'].includes(next)) return;
         showScreen('transfer');
@@ -772,6 +880,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setHeaderConnected(false);
     engine?.channelClosed();
     engine?.destroy();
+    if (previouslyConnected) recordActivity(peerDeviceLabel.textContent + ' disconnected');
+    clearSession();
     state.sender = null;
     state.receiver = null;
     if (state.code) {
@@ -1056,6 +1166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const parsed = JSON.parse(data);
         if (parsed && parsed.type === 'text') {
           appendChatLog('Peer', parsed.message);
+          recordActivity(peerDeviceLabel.textContent + ' shared a message');
           return;
         }
       } catch {
@@ -1079,6 +1190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       state.peer.send(JSON.stringify({ type: 'text', message: cleanText }));
       appendChatLog('You', cleanText);
+      recordActivity('You shared a message');
       testMessageInput.value = '';
     } catch (err) {
       alert(`Send failed: ${err.message}`);
@@ -1209,15 +1321,53 @@ document.addEventListener('DOMContentLoaded', () => {
     btnReturnHome.addEventListener('click', resetApp);
   }
 
+  function endSession() {
+    if ((state.sender?.active || state.receiver?.active) && !confirm('End this session and cancel the current transfer?')) return;
+    resetApp();
+  }
+
+  byId('end-session').addEventListener('click', endSession);
+  byId('clear-activity').addEventListener('click', () => {
+    if (!session) return;
+    session.activity.length = 0;
+    activityRows = 0;
+    byId('activity-list').replaceChildren();
+  });
+  byId('save-name').addEventListener('click', () => {
+    const name = AppMessages.nickname(byId('nickname').value);
+    if (!AppMessages.send(state.peer, 'device-name', { name })) {
+      byId('name-feedback').textContent = 'Enter a name and check that the connection is open.';
+      return;
+    }
+    localDeviceLabel.textContent = byId('nickname').value = name;
+    byId('name-feedback').textContent = 'Name shared.';
+  });
+  byId('new-code').addEventListener('click', regenerateCode);
+  for (const id of ['copy-code', 'copy-link']) {
+    byId(id).addEventListener('click', async () => {
+      if (!state.code) return;
+      const value = id === 'copy-code' ? state.code : pairingLink();
+      const attempt = pairingAttempt;
+      let message;
+      try {
+        await navigator.clipboard.writeText(value);
+        message = 'Copied.';
+      } catch {
+        message = 'Select and copy manually: ' + value;
+      }
+      if (attempt === pairingAttempt) byId('pairing-feedback').textContent = message;
+    });
+  }
+
   // Navigation Event Listeners
   btnStartSend.addEventListener('click', startHostFlow);
   btnStartReceive.addEventListener('click', startJoinFlow);
   btnCancelHost.addEventListener('click', resetApp);
   btnCancelJoin.addEventListener('click', resetApp);
-  btnDisconnect.addEventListener('click', resetApp);
+  btnDisconnect.addEventListener('click', endSession);
   brandLink.addEventListener('click', (e) => {
     e.preventDefault();
-    resetApp();
+    endSession();
   });
 
   joinForm.addEventListener('submit', handleJoinSubmit);

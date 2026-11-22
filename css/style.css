@@ -1864,3 +1864,11 @@ h1, h2, h3 {
     transition-duration: 0.001ms !important;
   }
 }
+
+.session-tools { width: 100%; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.session-tools details { padding: .75rem 0; border-top: 1px solid var(--color-mist); }
+.session-tools summary { cursor: pointer; font-weight: 600; padding: .5rem 0; }
+.session-tools input, .session-tools textarea { font: inherit; min-width: 0; max-width: 100%; padding: .6rem; }
+.session-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; justify-content: center; }
+#activity-list { max-height: 14rem; overflow: auto; padding-left: 1.5rem; }
+#session-stats { margin: .5rem 0; }

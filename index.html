@@ -117,6 +117,12 @@
 
           <span class="expiry-text" id="host-expiry-text">Code expires in 10 minutes</span>
 
+          <div class="session-actions">
+            <button class="btn btn-secondary" id="copy-code" disabled>Copy code</button>
+            <button class="btn btn-secondary" id="copy-link" disabled>Copy link</button>
+            <button class="btn btn-secondary" id="new-code" disabled>New code</button>
+          </div>
+          <p id="pairing-feedback" role="status"></p>
           <button type="button" class="btn btn-ghost" id="btn-cancel-host">Cancel</button>
         </div>
       </section>
@@ -288,6 +294,23 @@
           </div>
 
           <!-- Phase 1 Data Channel Proof & Verification Test Box -->
+          <div id="session-tools" class="session-tools" hidden>
+            <details id="activity-panel">
+              <summary>Session activity &amp; statistics</summary>
+              <p id="session-stats"></p>
+              <ol id="activity-list" aria-label="Session activity"></ol>
+              <button class="btn btn-secondary" id="clear-activity">Clear activity</button>
+            </details>
+            <details>
+              <summary>Connection</summary>
+              <label for="nickname">Your device name</label>
+              <div class="session-actions"><input id="nickname" maxlength="32" autocomplete="off">
+                <button id="save-name" class="btn btn-secondary">Save name</button>
+              </div>
+              <p id="name-feedback" role="status"></p>
+              <button id="end-session" class="btn btn-ghost">End session</button>
+            </details>
+          </div>
           <div class="phase-test-box" id="phase-chat" hidden>
             <h4>Phase 1 Data Channel Verification</h4>
             <p style="font-size: 0.8rem; color: var(--color-steel); margin-bottom: 0.5rem;">
@@ -468,6 +491,8 @@
   <!-- Scripts: Vendor QR, API client, WebRTC manager, Phase 2 engines, App logic (§7.4) -->
   <script src="js/vendor/qrcode.min.js"></script>
   <script src="js/api.js"></script>
+  <script src="js/application-messages.js"></script>
+  <script src="js/session.js"></script>
   <script src="js/webrtc.js?v=20261122"></script>
   <script src="js/transfer-protocol.js"></script>
   <script src="js/file-sender.js"></script>

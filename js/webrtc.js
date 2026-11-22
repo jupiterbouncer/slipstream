@@ -18,6 +18,7 @@ class SlipstreamPeer {
     onChannelOpen,
     onChannelMessage,
     onControlMessage,
+    onApplicationMessage,
     onBinaryMessage,
     onChannelClose,
     onError,
@@ -28,6 +29,7 @@ class SlipstreamPeer {
     this.onChannelOpen = onChannelOpen || (() => {});
     this.onChannelMessage = onChannelMessage || (() => {});
     this.onControlMessage = onControlMessage || (() => {});
+    this.onApplicationMessage = onApplicationMessage || (() => {});
     this.onBinaryMessage = onBinaryMessage || (() => {});
     this.onChannelClose = onChannelClose || (() => {});
     this.onError = onError || (() => {});
@@ -279,6 +281,10 @@ class SlipstreamPeer {
       let message;
       try { message = JSON.parse(data); } catch { return; }
       if (message?.protocol === 'slipstream') this.onControlMessage(message);
+      else if (message?.protocol === 'slipstream-app') {
+        const senderRole = this.role === 'host' ? 'joiner' : 'host';
+        if (AppMessages.valid(message, senderRole)) this.onApplicationMessage(message);
+      }
       else if (message?.protocol === undefined && message?.type === 'text' && typeof message.message === 'string') {
         this.onChannelMessage(data);
       }
