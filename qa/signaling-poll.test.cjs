@@ -12,7 +12,8 @@ function fixture(globals = {}) {
     setTimeout(fn, delay) { assert.equal(timer, undefined); timer = { fn, delay }; return 1; },
     clearTimeout() { timer = undefined; },
   };
-  const src = readFileSync(path.join(__dirname, '../js/webrtc.js'), 'utf8');
+  const src = readFileSync(path.join(__dirname, '../js/turn.js'), 'utf8') + '\n'
+    + readFileSync(path.join(__dirname, '../js/webrtc.js'), 'utf8');
   const Peer = vm.runInNewContext(src + '\nSlipstreamPeer', scope);
   return {
     peer: new Peer({ onError: error => errors.push(error) }), errors,

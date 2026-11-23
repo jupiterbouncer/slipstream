@@ -1,7 +1,7 @@
 /**
  * Slipstream WebRTC Connection Manager
  * Manages RTCPeerConnection, signaling exchange, and RTCDataChannel (§4, §5, §10, §12).
- * Direct peer-to-peer data transport; zero byte routing through server.
+ * Encrypted WebRTC data transport with optional TURN relay discovery.
  */
 
 // Time between completed signaling polls on shared hosting.
@@ -49,6 +49,10 @@ class SlipstreamPeer {
     this.pollController = null;
     this.isClosed = false;
     this.processedCandidates = new Set();
+    this.rejectedCandidates = new Set();
+    this.candidateRetries = new Map();
+    this.turnController = null;
+    this.selectedRoute = { route: 'unknown' };
     this.pendingCandidates = [];
     this.disconnectTimer = null;
     this.candidateCursor = 0;
@@ -58,6 +62,7 @@ class SlipstreamPeer {
 
     // Standard STUN configuration for local candidate discovery
     this.rtcConfig = {
+      iceTransportPolicy: 'all',
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
@@ -70,7 +75,21 @@ class SlipstreamPeer {
    */
   async start() {
     try {
-      this.pc = new RTCPeerConnection(this.rtcConfig);
+      this.turnController = new AbortController();
+      const servers = await SlipstreamTurn.load(globalThis.SLIPSTREAM_TURN_CONFIG, {
+        signal: this.turnController.signal, log: (event, details) => this.log(event, details),
+      });
+      if (this.isClosed) return;
+      const directConfig = this.rtcConfig;
+      this.rtcConfig = { ...directConfig, iceServers: [...directConfig.iceServers, ...servers] };
+      try {
+        this.pc = new RTCPeerConnection(this.rtcConfig);
+      } catch (error) {
+        if (!servers.length) throw error;
+        this.log('TURN configuration', { outcome: 'browser-rejected' });
+        this.rtcConfig = directConfig;
+        this.pc = new RTCPeerConnection(this.rtcConfig);
+      }
 
       this.pc.onicecandidate = ({ candidate }) => {
         if (candidate && !this.isClosed && !this.isChannelOpen()) {
@@ -237,18 +256,27 @@ class SlipstreamPeer {
     for (const c of candidates) {
       if (signal.aborted) return;
       const candidateKey = JSON.stringify(c);
-      if (!this.processedCandidates.has(candidateKey)) {
+      if (!this.processedCandidates.has(candidateKey) && !this.rejectedCandidates.has(candidateKey)) {
         try {
           await this.pc.addIceCandidate(new RTCIceCandidate(c));
+          if (signal.aborted || this.isClosed) return;
+          this.processedCandidates.add(candidateKey);
+          this.candidateRetries.delete(candidateKey);
           this.applied++;
           this.log('remote ICE candidate accepted', { index: this.candidateCursor });
         } catch (candidateErr) {
           if (signal.aborted) return;
           this.applyFailures++;
           this.log('remote ICE candidate rejected', { reason: candidateErr.name, index: this.candidateCursor });
-          if (candidateErr.name === 'InvalidStateError') throw candidateErr;
+          const attempts = (this.candidateRetries.get(candidateKey) || 0) + 1;
+          if (candidateErr.name === 'InvalidStateError' && attempts < 3) {
+            this.candidateRetries.set(candidateKey, attempts);
+            throw candidateErr;
+          }
+          this.candidateRetries.delete(candidateKey);
+          this.rejectedCandidates.add(candidateKey);
+          this.log('remote ICE candidate skipped', { index: this.candidateCursor, reason: candidateErr.name, attempts });
         }
-        this.processedCandidates.add(candidateKey);
       }
       this.candidateCursor++;
     }
@@ -393,6 +421,7 @@ class SlipstreamPeer {
       ice: this.pc?.iceConnectionState, connection: this.pc?.connectionState,
       channel: this.dataChannel?.readyState || 'unavailable', channelOpen: this.isChannelOpen(),
       applied: this.applied, applyFailures: this.applyFailures, candidateTypes: this.candidateTypes,
+      rejected: this.rejectedCandidates.size, selectedRoute: this.selectedRoute,
       durationSeconds: Math.floor((Date.now() - this.started) / 1000),
     };
   }
@@ -405,11 +434,30 @@ class SlipstreamPeer {
       if (this.pc !== pc) return;
       const pairs = [];
       const candidates = [];
+      let selectedPair;
+      report.forEach(row => {
+        if (row.type === 'transport' && row.selectedCandidatePairId) {
+          selectedPair = report.get(row.selectedCandidatePairId);
+        }
+      });
+      let local = report.get(selectedPair?.localCandidateId)?.candidateType;
+      let remote = report.get(selectedPair?.remoteCandidateId)?.candidateType;
+      if (!selectedPair) {
+        // Safari versions can expose the selected pair through the ICE transport.
+        const selected = pc.sctp?.transport?.iceTransport?.getSelectedCandidatePair?.();
+        local = selected?.local?.type;
+        remote = selected?.remote?.type;
+      }
+      this.selectedRoute = {
+        route: local && remote ? (local === 'relay' || remote === 'relay' ? 'relayed' : 'direct') : 'unknown',
+        local, remote,
+      };
       report.forEach(row => {
         if (row.type === 'local-candidate' || row.type === 'remote-candidate') {
           candidates.push({ side: row.type, type: row.candidateType, protocol: row.protocol });
         }
         if (row.type === 'candidate-pair') pairs.push({
+          selected: row === selectedPair,
           state: row.state, nominated: !!row.nominated,
           local: report.get(row.localCandidateId)?.candidateType,
           remote: report.get(row.remoteCandidateId)?.candidateType,
@@ -420,7 +468,7 @@ class SlipstreamPeer {
       for (const side of ['local', 'remote']) {
         this.candidateTypes[side] = [...new Set(candidates.filter(c => c.side === side + '-candidate').map(c => c.type))];
       }
-      this.log('ICE candidate pairs', { candidates, pairs });
+      this.log('ICE candidate pairs', { selectedRoute: this.selectedRoute, candidates, pairs });
     }).catch(() => {
       if (this.pc === pc) this.log('ICE statistics unavailable');
     }).finally(() => { this.statsPending = false; });
@@ -454,6 +502,7 @@ class SlipstreamPeer {
     if (this.statsPending) this.log('ICE statistics interrupted by closure');
     SlipstreamPeer.lastSnapshot = { ...this.snapshot(), channel: 'closed', channelOpen: false };
     this.isClosed = true;
+    this.turnController?.abort();
     clearTimeout(this.disconnectTimer);
     this.stopPolling();
     this.receiveQueue = Promise.resolve();
@@ -485,5 +534,7 @@ class SlipstreamPeer {
 
     this.pendingCandidates.length = 0;
     this.processedCandidates.clear();
+    this.rejectedCandidates.clear();
+    this.candidateRetries.clear();
   }
 }
