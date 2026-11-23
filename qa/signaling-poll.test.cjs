@@ -64,16 +64,7 @@ test('expired session and browser challenge stop polling immediately', async () 
   }
 });
 
-test('opening the data channel clears the pending poll', () => {
-  const f = fixture();
-  f.peer.startPolling(() => assert.fail('unexpected poll'));
-  const channel = {};
-  f.peer.setupDataChannel(channel);
-  channel.onopen();
-  assert.equal(f.delay, undefined);
-});
-
-test('transient candidate POST keeps the same candidate until acknowledged', async () => {
+test('transient candidate POST keeps the same candidate and still reads remote signaling', async () => {
   const posted = [];
   const f = fixture({ Api: { async sendIceCandidate(code, role, candidate) {
     posted.push(candidate);
@@ -84,10 +75,10 @@ test('transient candidate POST keeps the same candidate until acknowledged', asy
   f.peer.startPolling(async () => { polls++; });
   await f.tick();
   assert.equal(f.delay, 5000);
-  assert.equal(polls, 0);
+  assert.equal(polls, 1);
   await f.tick();
   assert.deepEqual(posted, ['first', 'first', 'second']);
-  assert.equal(polls, 1);
+  assert.equal(polls, 2);
   f.peer.close();
 });
 
@@ -114,6 +105,30 @@ test('remote cursor resumes at the first unapplied candidate and skips duplicate
   assert.equal(f.peer.snapshot().applied, 2);
   assert.equal(f.peer.snapshot().applyFailures, 1);
   assert.equal(f.peer.candidateCursor, 3);
+});
+
+test('host retries the identical offer, shares candidates during backoff, and aborts on close', async () => {
+  const offers = [], posts = [];
+  let signal;
+  const f = fixture({ Api: {
+    async sendOffer(code, offer, s) {
+      signal = s;
+      offers.push(offer);
+      if (offers.length === 1) throw Object.assign(new Error(), { status: 503 });
+    },
+    async sendIceCandidate(code, role, c) { posts.push(c); },
+  } });
+  f.peer.pendingCandidates.push('candidate');
+  const offer = { type: 'offer', sdp: 'same-generation' };
+  f.peer.startHostPolling(offer);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(posts, ['candidate']);
+  assert.equal(f.delay, 5000);
+  await f.tick();
+  assert.deepEqual(offers, [offer, offer]);
+  assert.equal(f.peer.stage, 'Waiting for the other device…');
+  f.peer.close();
+  assert.equal(signal.aborted, true);
 });
 
 test('ICE connected keeps polling until the channel opens, ICE failed closes the peer once', async () => {
@@ -161,7 +176,7 @@ test('late stats from a closed peer cannot overwrite a new attempt report', asyn
   f.peer.pc = { getStats: () => new Promise(resolve => { complete = resolve; }), close() {} };
   f.peer.logCandidatePairs();
   f.peer.close();
-  assert.ok(f.peer.constructor.diagnostics.some(e => e.event === 'ICE statistics interrupted by closure'));
+  assert.ok(f.peer.constructor.diagnostics.some(e => e.event === 'connection closed'));
   assert.equal(f.peer.constructor.lastSnapshot.channelOpen, false);
   const next = new f.peer.constructor({ role: 'host' });
   next.log('new attempt');

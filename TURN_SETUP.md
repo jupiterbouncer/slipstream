@@ -38,7 +38,17 @@ Open **Diagnostics** during or after a pairing attempt, then download the connec
 
 `snapshot.selectedRoute` reports `direct`, `relayed`, or `unknown`, plus local and remote candidate types when available. Selection comes from the transport's `selectedCandidatePairId`, with an ICE-transport API fallback for browsers exposing that interface. A nominated or successful unselected pair never proves relay use. `unknown` means the browser has not exposed a selected pair. Reports describe the last observed route and retain the final snapshot after closure.
 
-Rejected candidates stay distinct from applied candidates. `InvalidStateError` is retried through bounded signaling backoff, up to three applications per candidate. A permanent failure or exhausted retry is recorded and skipped so later candidates can still connect. Duplicate accepted and rejected candidates are suppressed. The existing ten-second disconnection grace period remains active.
+Rejected candidates stay distinct from applied candidates. `InvalidStateError` is retried through bounded signaling backoff, up to three applications per candidate. A permanent failure or exhausted retry is recorded and skipped so later candidates can still connect. Successful application means the browser accepted the candidate. Responses to connectivity checks and a selected pair provide evidence that traffic can pass.
+
+The `stability2` export identifies local, NAT-traversed and relayed selected paths. A relay at either end counts as relayed. Candidate families (IPv4, IPv6 or mDNS) appear when the browser exposes them. Check both devices' reports for application errors, pair priorities, check responses, bytes, recovery duration and closure reason. An unavailable final sample is identified explicitly. Unanswered checks alone cannot distinguish Wi-Fi client isolation, multicast filtering, routing, browser privacy or packet loss.
+
+Both devices continue exchanging candidates at the existing cadence for up to ten seconds after the channel opens. This gives late direct candidates a chance after an early relay connection. A signaling failure during this interval leaves the established channel usable.
+
+## Connection recovery
+
+Either ICE or peer disconnection starts one 30-second recovery window. Slipstream keeps the same data channel, transfer and backpressure state, and displays **Reconnecting…**. Recovery clears the deadline when the reported transport states are healthy. Native failure, channel closure or expiry ends the attempt. Retry starts fresh pairing. The previous Windows report showed the application closing a relayed connection ten seconds after disconnection, without a native failure. Thirty seconds allows a full ICE consent-expiry interval and fits within the normal 60-second transfer response deadline. Browser consent checks and TURN refresh are managed by the browser, with their own clocks. Suspending a browser can also delay JavaScript timers. [RFC 7675 §5.1](https://www.rfc-editor.org/rfc/rfc7675#section-5.1)
+
+ICE restart would require a generation identifier, updated offers and answers, generation-specific candidate cursors, a restart initiator and signaling that survives session expiry. The existing database holds one temporary offer, answer and candidate list per role. Recovery uses the current ICE generation. A permanent loss requires a fresh session and a new transfer for incomplete files.
 
 ## Automated verification
 
@@ -57,14 +67,22 @@ Run every row with current browser versions and both devices awake. Record versi
 |---|---|---|
 | Desktop Chrome ↔ laptop Chrome | Ordinary Wi-Fi | Pair, exchange chat, accept a file, verify download and completion ACK |
 | Desktop Chrome ↔ laptop Chrome | Known working third-device hotspot | Confirm direct transfer remains available with TURN configured |
-| iPhone Safari ↔ desktop Chrome | Ordinary Wi-Fi and hotspot | Repeat both directions, chat and verified download |
+| iPhone Safari ↔ desktop Chrome | Ordinary Wi-Fi, cellular data off | Repeat both directions, chat and verified download |
+| iPhone Safari ↔ desktop Chrome | iPhone Personal Hotspot, laptop joined to iPhone | Repeat both directions and record route separately from third-device hotspot |
 | iPhone Safari ↔ desktop Brave | Ordinary Wi-Fi and hotspot | Repeat both directions and capture selected route |
 | Any pair that failed before | Hostel Wi-Fi | Enable credentials and confirm an actual selected `relay` pair when direct connectivity fails |
 
-For each pair, also decline a file, cancel a transfer, reconnect after a dropped link, then transfer again in the same session where possible. Brief disconnections should recover within the grace period. Sustained failures should show failure and allow fresh pairing. Confirm shared text, names, queues, requests and previews still work.
+1. Open the same build on both devices. Create a code on one and join on the other. Confirm the channel opens on both and exchange a chat message in each direction.
+2. Send a known file, accept, download it and compare SHA-256 with the original (Windows: `Get-FileHash -Algorithm SHA256 <path>`). For Safari, save to Files and copy the download back independently for hashing. Confirm both sides report verified completion.
+3. Remain connected for at least two minutes to cover the previously observed 64-second drop. Send another message. Download Diagnostics on both devices before exiting and record the selected route on each.
+4. During a second, larger transfer, briefly interrupt the laptop's Wi-Fi and restore the same network. Record the interruption duration, native states, recovery outcome and hashes. A native terminal failure should offer fresh pairing. Repeat with Wi-Fi off beyond 30 seconds after disconnection to exercise the deadline. End the session, check that chat is gated and pair with a new code.
 
 On a disposable local test copy only, temporarily set `iceTransportPolicy` to `relay` to verify authenticated relay allocation and byte-identical delivery even if direct routes are available. Restore `all` immediately afterward and verify it before packaging. Record `relayed` in the selected-route report on both ends. There is no production relay-only switch.
 
 Repeat once with an invalid credential-scoped key and once with the provider request blocked. Pairing must proceed with STUN after a bounded wait, with a sanitized fallback reason. Success then depends on a usable direct network path.
 
-Live relay and physical-device acceptance are pending account configuration and access to the devices/network. Browser-security HTML responses from the signaling host must be diagnosed separately from ICE connectivity.
+The supplied physical laptop trace records a working relay on the preceding build. All physical rows above require acceptance on this build. Browser-security HTML responses from the signaling host are a separate failure mode from ICE connectivity.
+
+## Release and rollback
+
+After review, back up the deployed `index.html`, `js/api.js`, `js/app.js` and `js/webrtc.js`. Upload those three JavaScript files first and the new HTML last. Keep the installed TURN configuration and MySQL override. Reload both devices in fresh sessions and check the downloaded report says `stability2`. To roll back, restore those same four files from the backup, restoring HTML last, and pair again.

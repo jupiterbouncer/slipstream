@@ -117,7 +117,20 @@ for (const action of ['sender cancel', 'receiver cancel', 'close', 'resume']) {
     assert.equal(queued, 65);
     assert.equal(f.channels[0].bufferedAmountLowThreshold, 256 * 1024);
     if (action === 'close') f.close();
-    else if (action === 'resume') f.drain();
+    else if (action === 'resume') {
+      for (const peer of f.peers) {
+        peer.pc = { iceConnectionState: 'disconnected', connectionState: 'connected' };
+        peer.checkConnection();
+      }
+      await tick();
+      assert.equal(f.chunks.length, queued);
+      for (const peer of f.peers) {
+        peer.pc.iceConnectionState = 'connected';
+        peer.checkConnection();
+        assert.equal(peer.stage, 'Connected');
+      }
+      f.drain();
+    }
     else (action === 'sender cancel' ? f.sender : f.receiver).cancel();
     assert.equal((await done).state, { close: 'failed', resume: 'completed' }[action] || 'cancelled');
     await tick(); assert.equal(f.receiver.active, null);
@@ -125,6 +138,13 @@ for (const action of ['sender cancel', 'receiver cancel', 'close', 'resume']) {
     if (action !== 'resume') {
       assert.equal(f.chunks.length, queued); assert.deepEqual(f.completed, [[], []]);
       if (action !== 'close') assert.equal(f.messages.at(-1).type, 'file-cancel-ack');
+    } else {
+      const expected = Buffer.from(await file(2 * 1024 * 1024).arrayBuffer());
+      assert.deepEqual(Buffer.from(await f.completed[1][0].blob.arrayBuffer()), expected);
+      assert.equal(f.completed[0][0].sha256, createHash('sha256').update(expected).digest('hex'));
+      for (const type of ['file-offer', 'file-complete-ack']) {
+        assert.equal(f.messages.filter(message => message.type === type).length, 1);
+      }
     }
   });
 }

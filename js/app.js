@@ -238,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'Pairing stage': snapshot.stage, Signaling: snapshot.signaling, 'ICE gathering': snapshot.gathering,
       ICE: snapshot.ice, Peer: snapshot.connection, 'Data channel': snapshot.channel,
       'Selected route (last observed)': snapshot.selectedRoute?.route,
+      'Selected path type': snapshot.selectedRoute?.kind,
       'Selected local / remote types': [snapshot.selectedRoute?.local, snapshot.selectedRoute?.remote].filter(Boolean).join(' / '),
       'Local candidate types': snapshot.candidateTypes.local.join(', '),
       'Remote candidate types': snapshot.candidateTypes.remote.join(', '),
@@ -260,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
       status.textContent = 'Start a pairing attempt first, then download its report here.';
       return;
     }
-    const blob = new Blob([JSON.stringify({ build: 'connectivity1', snapshot, entries }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ build: 'stability2', snapshot, entries }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -303,8 +304,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSendTestMsg.disabled = !open;
     if (!headerStatus) return;
     if (open) {
-      headerStatus.classList.add('connected');
-      if (headerStatusText) headerStatusText.textContent = 'Connected';
+      const recovering = state.peer.stage === 'Reconnecting…';
+      headerStatus.classList.toggle('connected', !recovering);
+      if (headerStatusText) headerStatusText.textContent = recovering ? 'Reconnecting…' : 'Connected';
     } else {
       headerStatus.classList.remove('connected');
       if (headerStatusText) headerStatusText.textContent = 'Local Network';
@@ -752,6 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
         code: state.code,
         onStatusChange: (status) => {
           hostStatusMsg.textContent = status;
+          if (attempt === pairingAttempt && state.peer?.isChannelOpen()) setHeaderConnected(true);
         },
         onChannelOpen: () => {
           if (attempt !== pairingAttempt || !state.peer?.isChannelOpen()) return;
@@ -831,7 +834,9 @@ document.addEventListener('DOMContentLoaded', () => {
         role: 'joiner',
         code: state.code,
         onStatusChange: (status) => {
-          btnSubmitJoin.textContent = status;
+          if (attempt !== pairingAttempt) return;
+          if (state.peer?.isChannelOpen()) setHeaderConnected(true);
+          else btnSubmitJoin.textContent = status;
         },
         onChannelOpen: () => {
           if (attempt !== pairingAttempt || !state.peer?.isChannelOpen()) return;
