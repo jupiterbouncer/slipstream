@@ -30,9 +30,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const byId = id => document.getElementById(id);
   const viewer = createPreviewDialog(byId('file-viewer'));
-  const textSharing = setupTextSharing(byId, () => state.peer, recordActivity);
+  const textSharing = setupTextSharing(byId, () => state.peer, participantName, recordActivity);
   const verifiedFiles = byId('verified-files');
-  const downloads = new Set();
+  const savedFiles = byId('saved-files');
   let requests = null;
   let pickerRequest = null;
   let queue = null;
@@ -47,20 +47,32 @@ document.addEventListener('DOMContentLoaded', () => {
     for (; activityRows < session.activity.length; activityRows++) {
       const event = session.activity[activityRows];
       const row = document.createElement('li');
-      row.textContent = new Date(event.time).toLocaleTimeString() + ' · ' + event.message;
+      const time = document.createElement('time');
+      const date = new Date(event.time);
+      time.dateTime = date.toISOString();
+      time.textContent = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const description = document.createElement('span');
+      if (event.person) {
+        const name = document.createElement('strong');
+        name.dataset.person = event.person;
+        name.textContent = participantName(event.person);
+        description.append(name, ' ');
+      }
+      description.append(event.message);
+      row.append(time, description);
       list.append(row);
     }
     const now = Date.now();
     const seconds = (start, end) => Math.max(0, Math.floor((end - start) / 1000)) + 's';
     const elapsed = session.transferStarted === null ? '—' : seconds(session.transferStarted, session.transferEnded ?? now);
     byId('session-stats').textContent = [
-      session.verified + ' verified files', session.bytes.toLocaleString() + ' verified bytes',
+      session.verified + ' verified files', formatFileSize(session.bytes) + ' shared',
       session.skipped + ' declined or cancelled', 'Transfer ' + elapsed, 'Session ' + seconds(session.started, now),
     ].join(' · ');
   }
 
-  function recordActivity(message) {
-    session?.record(message);
+  function recordActivity(message, person) {
+    session?.record(message, person);
     renderSession();
   }
 
@@ -71,6 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
       byId('request-status').textContent = message;
       byId('request-file').disabled = !!requests.pending;
       byId('request-choice').hidden = !(requests.pending && state.role === 'host');
+      if (requests.pending && state.role === 'host' && byId('view-files').hidden) byId('tab-files').classList.add('unread');
       recordActivity(message);
     });
     byId('request-file').hidden = state.role !== 'joiner';
@@ -78,9 +91,15 @@ document.addEventListener('DOMContentLoaded', () => {
     byId('session-tools').hidden = false;
     byId('nickname').value = localDeviceLabel.textContent = state.role === 'host' ? 'Sender' : 'Receiver';
     peerDeviceLabel.textContent = state.role === 'host' ? 'Receiver' : 'Sender';
-    recordActivity(peerDeviceLabel.textContent + ' connected');
+    refreshNames();
+    selectView('files');
+    renderRoute();
+    recordActivity('connected', 'peer');
     AppMessages.send(state.peer, 'device-name', { name: localDeviceLabel.textContent });
-    sessionTimer = setInterval(() => { if (byId('activity-panel').open) renderSession(); }, 1000);
+    sessionTimer = setInterval(() => {
+      if (!byId('view-activity').hidden) renderSession();
+      renderRoute();
+    }, 1000);
   }
 
   function clearSession() {
@@ -103,10 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
     activityRows = 0;
     byId('activity-list').replaceChildren();
     byId('session-tools').hidden = true;
+    byId('tab-files').classList.remove('unread');
     byId('session-stats').textContent = byId('name-feedback').textContent = '';
     byId('nickname').value = '';
-    testMessageInput.value = '';
-    testChatLog.textContent = 'Data channel ready.';
     transferLabelSender.textContent = 'Sender';
     transferLabelReceiver.textContent = 'Receiver';
     localDeviceLabel.textContent = 'This device';
@@ -116,10 +134,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function receiveApplicationMessage(message) {
     if (!session) return;
     if (message.type === 'file-request' || message.type === 'file-request-result') requests?.receive(message);
-    if (message.type === 'share-text') textSharing.receive(message.text, peerDeviceLabel.textContent);
+    if (message.type === 'share-text') textSharing.receive(message.text);
     if (message.type === 'device-name') {
       peerDeviceLabel.textContent = message.name;
-      (state.role === 'host' ? transferLabelReceiver : transferLabelSender).textContent = message.name;
+      refreshNames();
     }
   }
 
@@ -145,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
     pairing: document.getElementById('screen-pairing'),
     join: document.getElementById('screen-join'),
     connected: document.getElementById('screen-connected'),
-    transfer: document.getElementById('screen-transfer'),
+    failed: byId('screen-failed'),
   };
 
   // Navigation & Brand
@@ -153,7 +171,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStartReceive = document.getElementById('btn-start-receive');
   const btnCancelHost = document.getElementById('btn-cancel-host');
   const btnCancelJoin = document.getElementById('btn-cancel-join');
-  const btnDisconnect = document.getElementById('btn-disconnect');
   const brandLink = document.getElementById('brand-link');
 
   // Header Elements
@@ -177,10 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const receiverFileSection = document.getElementById('receiver-file-section');
   const receiverWaitingBox = document.getElementById('receiver-waiting-box');
   const receiverStatusMsg = document.getElementById('receiver-status-msg');
-  const testChatLog = document.getElementById('test-chat-log');
-  const chatBox = document.getElementById('phase-chat');
-  const testMessageInput = document.getElementById('test-message-input');
-  const btnSendTestMsg = document.getElementById('btn-send-test-msg');
   const localDeviceLabel = document.getElementById('local-device-label');
   const peerDeviceLabel = document.getElementById('peer-device-label');
   const connectedDeviceItems = document.querySelectorAll('.device-item');
@@ -238,6 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'Pairing stage': snapshot.stage, Signaling: snapshot.signaling, 'ICE gathering': snapshot.gathering,
       ICE: snapshot.ice, Peer: snapshot.connection, 'Data channel': snapshot.channel,
       'Selected route (last observed)': snapshot.selectedRoute?.route,
+      'Selected path type': snapshot.selectedRoute?.kind,
       'Selected local / remote types': [snapshot.selectedRoute?.local, snapshot.selectedRoute?.remote].filter(Boolean).join(' / '),
       'Local candidate types': snapshot.candidateTypes.local.join(', '),
       'Remote candidate types': snapshot.candidateTypes.remote.join(', '),
@@ -260,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
       status.textContent = 'Start a pairing attempt first, then download its report here.';
       return;
     }
-    const blob = new Blob([JSON.stringify({ build: 'connectivity1', snapshot, entries }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ build: 'workspace1', snapshot, entries }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -289,47 +303,66 @@ document.addEventListener('DOMContentLoaded', () => {
       heading.tabIndex = -1;
       heading.focus({ preventScroll: true });
     }
-    // Keep the existing conversation accessible throughout an open connection.
-    if (screenName === 'connected' || screenName === 'transfer') {
-      const card = screens[screenName].querySelector('.connected-card');
-      if (chatBox.parentElement !== card) card.append(verifiedFiles, byId('session-tools'), chatBox);
-    }
+    byId('home-notice').hidden = true;
+    const workspaceOpen = screenName === 'connected';
+    document.body.classList.toggle('in-workspace', workspaceOpen);
+    document.querySelector('.settings-trigger').hidden = !workspaceOpen;
   }
 
+  const tabs = Array.from(document.querySelectorAll('.workspace-rail [role="tab"]'));
+  function selectView(name) {
+    const next = byId('tab-' + name);
+    const previous = tabs.find(tab => tab.getAttribute('aria-selected') === 'true');
+    for (const tab of tabs) {
+      const active = tab === next;
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+      const panel = byId(tab.getAttribute('aria-controls'));
+      panel.style.setProperty('--slide-from', tabs.indexOf(next) < tabs.indexOf(previous) ? '-8px' : '8px');
+      panel.hidden = !active;
+    }
+    next.classList.remove('unread');
+    if (name === 'activity') renderSession();
+    if (name === 'messages') byId('received-text').scrollTop = byId('received-text').scrollHeight;
+  }
+  tabs.forEach((tab, index) => {
+    tab.onclick = () => selectView(tab.id.slice(4));
+    tab.onkeydown = event => {
+      const target = { ArrowDown: (index + 1) % tabs.length, ArrowUp: (index + tabs.length - 1) % tabs.length,
+        Home: 0, End: tabs.length - 1 }[event.key];
+      if (target === undefined) return;
+      event.preventDefault();
+      tabs[target].click();
+      tabs[target].focus();
+    };
+  });
+
+  function participantName(person) {
+    return (person === 'local' ? localDeviceLabel : peerDeviceLabel).textContent;
+  }
+  function refreshNames() {
+    for (const label of document.querySelectorAll('[data-person]')) label.textContent = participantName(label.dataset.person);
+    transferLabelSender.textContent = participantName(state.role === 'host' ? 'local' : 'peer');
+    transferLabelReceiver.textContent = participantName(state.role === 'host' ? 'peer' : 'local');
+    receiverStatusMsg.textContent = 'Waiting for ' + participantName('peer') + ' to share a file';
+    if (state.pendingOffer) incomingFilemeta.textContent = (state.pendingOffer.mimeType || 'File') + ' · from ' + participantName('peer');
+  }
+  function renderRoute() {
+    const route = state.peer?.disconnectStarted == null ? state.peer?.selectedRoute?.route : 'unknown';
+    const copy = ({
+      direct: 'Direct · DTLS encrypted · Server pairs devices',
+      relayed: 'Via TURN · DTLS encrypted · Server pairs devices',
+    })[route] || 'DTLS encrypted · Server pairs devices';
+    if (byId('security-copy').textContent !== copy) byId('security-copy').textContent = copy;
+  }
   function setHeaderConnected(isConnected) {
     const open = isConnected && !!state.peer?.isChannelOpen();
-    chatBox.hidden = !open;
-    testMessageInput.disabled = !open;
-    btnSendTestMsg.disabled = !open;
-    if (!headerStatus) return;
-    if (open) {
-      headerStatus.classList.add('connected');
-      if (headerStatusText) headerStatusText.textContent = 'Connected';
-    } else {
-      headerStatus.classList.remove('connected');
-      if (headerStatusText) headerStatusText.textContent = 'Local Network';
-    }
-  }
-
-  function appendChatLog(prefix, message) {
-    if (!testChatLog) return;
-
-    // Clear initial placeholder if this is the first message
-    if (testChatLog.children.length === 0 && testChatLog.textContent.trim() === 'Data channel ready.') {
-      testChatLog.textContent = '';
-    }
-
-    // Sanitize message: strip any accidental or accumulated prefixes from prior entries
-    const rawMsg = typeof message === 'string' ? message : String(message || '');
-    const cleanMessage = rawMsg.replace(/^(?:(?:You|Peer|System):\s*)+/i, '').trim();
-
-    // Create a brand-new, isolated DOM element for this single entry with no carryover
-    const line = document.createElement('div');
-    line.className = 'chat-log-entry';
-    line.textContent = `${prefix}: ${cleanMessage}`;
-
-    testChatLog.appendChild(line);
-    testChatLog.scrollTop = testChatLog.scrollHeight;
+    const recovering = open && state.peer.stage === 'Reconnecting…';
+    headerStatus.classList.toggle('connected', open && !recovering);
+    headerStatus.classList.toggle('recovering', recovering);
+    headerStatusText.textContent = recovering ? 'Reconnecting…' : open ? 'Connected' : 'Local Network';
+    byId('send-text').disabled = !open || recovering;
+    renderRoute();
   }
 
   function formatFileSize(bytes) {
@@ -345,10 +378,12 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   let pairingAttempt = 0;
   function resetApp() {
+    pairingAttempt++;
+    for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
     clearSession();
     pairingControls(false);
     byId('pairing-feedback').textContent = '';
-    pairingAttempt++;
+    btnScanQr.disabled = false;
     btnSubmitJoin.disabled = false;
     btnSubmitJoin.textContent = 'Connect to device';
     setHeaderConnected(false);
@@ -362,9 +397,12 @@ document.addEventListener('DOMContentLoaded', () => {
       try { state.receiver.destroy(); } catch {}
       state.receiver = null;
     }
-    for (const url of downloads) URL.revokeObjectURL(url);
-    downloads.clear();
-    verifiedFiles.querySelector('ul').replaceChildren();
+    // Keep verified Blobs in this tab, outside the next peer's workspace.
+    const savedList = savedFiles.querySelector('ul');
+    verifiedFiles.querySelector('#btn-download-file')?.removeAttribute('id');
+    const currentList = verifiedFiles.querySelector('ul');
+    while (currentList.firstChild) savedList.append(currentList.firstChild);
+    savedFiles.hidden = !savedList.children.length;
     verifiedFiles.hidden = true;
     state.pendingOffer = null;
     state.transferProblem = '';
@@ -383,10 +421,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (incomingSection) incomingSection.style.display = 'none';
     if (receiverWaitingBox) receiverWaitingBox.style.display = 'flex';
     if (receiverStatusMsg) receiverStatusMsg.textContent = 'Waiting for sender to select a file...';
-
-    // Hide incoming offer fallback if present
-    const fallback = document.getElementById('incoming-offer-fallback');
-    if (fallback) fallback.style.display = 'none';
 
     if (state.peer) {
       state.peer.close();
@@ -407,13 +441,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (scanLine) qrDisplay.appendChild(scanLine);
     }
 
+    const address = new URL(location.href);
+    if (address.searchParams.has('join')) {
+      address.searchParams.delete('join');
+      history.replaceState(history.state, '', address);
+    }
     if (joinCodeInput) joinCodeInput.value = '';
     if (joinErrorMsg) joinErrorMsg.style.display = 'none';
-    if (testChatLog) testChatLog.innerHTML = 'Data channel ready.';
 
     // Reset sender file preview
     if (fileInput) fileInput.value = '';
-    if (fileDropzone) fileDropzone.style.display = 'block';
 
     // Reset active file badge
     updateActiveFileBadge(null);
@@ -469,6 +506,8 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function updateTransferUIState(stateName, details = {}) {
     state.transferState = stateName;
+    byId('transfer-progress').hidden = stateName === 'idle';
+    incomingSection.style.display = 'none';
     console.debug('[Slipstream] transfer state', stateName);
 
     // Reset modifier classes on pill, trail, and device glyphs
@@ -647,25 +686,36 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function setupDownloadButton(blob, filename) {
     const url = URL.createObjectURL(blob.slice(0, blob.size, 'application/octet-stream'));
-    downloads.add(url);
+
     const row = document.createElement('li');
     const link = document.createElement('a');
-    byId('btn-download-file')?.removeAttribute('id');
+    verifiedFiles.querySelector('#btn-download-file')?.removeAttribute('id');
     link.id = 'btn-download-file';
     link.className = 'btn btn-primary';
     link.href = url;
     link.download = filename;
     link.textContent = 'Download';
-    row.append(filename, ' ', link,
+    row.append(fileDetails(filename, formatFileSize(blob.size)), link,
       actionButton('Preview', () => viewer.open({ name: filename, blob, verified: true })),
       actionButton('Remove', () => {
         URL.revokeObjectURL(url);
-        downloads.delete(url);
+        const section = row.closest('section');
         row.remove();
-        verifiedFiles.hidden = !downloads.size;
+        section.hidden = !section.querySelector('li');
       }));
     verifiedFiles.querySelector('ul').append(row);
     verifiedFiles.hidden = false;
+  }
+
+  function fileDetails(name, meta) {
+    const info = document.createElement('div');
+    info.className = 'file-details';
+    const title = document.createElement('strong');
+    title.textContent = name;
+    const size = document.createElement('small');
+    size.textContent = meta;
+    info.append(title, size);
+    return info;
   }
 
   function actionButton(label, click) {
@@ -685,7 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function pairingLink() {
-    const link = new URL(location.href);
+    const link = new URL(location.pathname, location.origin);
     link.searchParams.set('join', state.code);
     return link.href;
   }
@@ -752,13 +802,14 @@ document.addEventListener('DOMContentLoaded', () => {
         code: state.code,
         onStatusChange: (status) => {
           hostStatusMsg.textContent = status;
+          if (attempt === pairingAttempt && state.peer?.isChannelOpen()) setHeaderConnected(true);
         },
         onChannelOpen: () => {
           if (attempt !== pairingAttempt || !state.peer?.isChannelOpen()) return;
           setHeaderConnected(true);
           beginSession();
           pairingControls(false);
-          if (senderFileSection) senderFileSection.style.display = 'block';
+          senderFileSection.hidden = false;
           if (receiverFileSection) receiverFileSection.style.display = 'none';
 
           // Trigger subtle device glyph lift and settle (Requirement B)
@@ -770,7 +821,6 @@ document.addEventListener('DOMContentLoaded', () => {
           initializeTransferEngines();
 
           showScreen('connected');
-          appendChatLog('System', 'Encrypted WebRTC data channel connected!');
         },
         onApplicationMessage: receiveApplicationMessage,
         onControlMessage: (message) => {
@@ -817,7 +867,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      btnSubmitJoin.disabled = true;
+      btnScanQr.disabled = btnSubmitJoin.disabled = true;
       btnSubmitJoin.textContent = 'Checking pairing code…';
       joinErrorMsg.style.display = 'none';
 
@@ -831,7 +881,9 @@ document.addEventListener('DOMContentLoaded', () => {
         role: 'joiner',
         code: state.code,
         onStatusChange: (status) => {
-          btnSubmitJoin.textContent = status;
+          if (attempt !== pairingAttempt) return;
+          if (state.peer?.isChannelOpen()) setHeaderConnected(true);
+          else btnSubmitJoin.textContent = status;
         },
         onChannelOpen: () => {
           if (attempt !== pairingAttempt || !state.peer?.isChannelOpen()) return;
@@ -839,7 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btnSubmitJoin.textContent = 'Connect to device';
           setHeaderConnected(true);
           beginSession();
-          if (senderFileSection) senderFileSection.style.display = 'none';
+          senderFileSection.hidden = true;
           if (receiverFileSection) receiverFileSection.style.display = 'block';
           if (receiverWaitingBox) receiverWaitingBox.style.display = 'flex';
           if (incomingSection) incomingSection.style.display = 'none';
@@ -853,7 +905,6 @@ document.addEventListener('DOMContentLoaded', () => {
           initializeTransferEngines();
 
           showScreen('connected');
-          appendChatLog('System', 'Encrypted WebRTC data channel connected!');
         },
         onApplicationMessage: receiveApplicationMessage,
         onControlMessage: (message) => {
@@ -872,7 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await state.peer.start();
     } catch (err) {
       if (attempt !== pairingAttempt) return;
-      btnSubmitJoin.disabled = false;
+      btnScanQr.disabled = btnSubmitJoin.disabled = false;
       btnSubmitJoin.textContent = 'Connect to device';
       joinErrorMsg.textContent = err.status === 404 || err.status === 410 ? 'Code not found or expired. Ask for a new code.'
         : err.status === 429 ? 'Too many attempts. Wait a minute before trying again.'
@@ -907,7 +958,6 @@ document.addEventListener('DOMContentLoaded', () => {
         trackTransfer(next, details);
         // Completion and failure callbacks carry the verified Blob or error.
         if (['completed', 'failed', 'awaiting-decision', 'ready'].includes(next)) return;
-        showScreen('transfer');
         updateTransferUIState(next, details);
       },
     };
@@ -928,32 +978,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleChannelClose(attempt) {
     if (attempt !== pairingAttempt) return;
-    pairingAttempt++;
-    const engine = state.sender || state.receiver;
-    const interrupted = !!engine?.active;
-    const completed = state.transferState === 'completed';
-    const previouslyConnected = !!engine;
-    state.peer?.close();
-    state.peer = null;
-    setHeaderConnected(false);
-    engine?.channelClosed();
-    engine?.destroy();
-    if (previouslyConnected) recordActivity(peerDeviceLabel.textContent + ' disconnected');
-    clearSession();
-    state.sender = null;
-    state.receiver = null;
-    if (state.code) {
-      void Api.deleteSession(state.code);
-      state.code = null;
+    const role = state.role;
+    const wasConnected = !!session;
+    // The peer calls this only on a terminal error/close, after any ICE grace period.
+    resetApp();
+    if (wasConnected) {
+      byId('home-notice').hidden = false;
+      byId('home-notice').textContent = savedFiles.hidden ? 'Connection ended. Pair again to start a new session.'
+        : 'Connection ended. Your verified files are still available below.';
+    } else {
+      state.role = role;
+      showScreen('failed');
     }
-    // A verified download remains usable after its peer leaves.
-    if (completed) return;
-    showScreen('transfer');
-    if (interrupted) return; // channelClosed already reported the transfer error.
-    updateTransferUIState('failed', {
-      connectionTitle: previouslyConnected ? 'Connection lost' : 'Connection failed',
-      message: previouslyConnected ? 'Pair again to reconnect.' : "Couldn't connect to device",
-    });
   }
 
   function retryConnection() {
@@ -973,7 +1009,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     state.selectedFile = file;
     updateActiveFileBadge(state.selectedFile);
-    showScreen('transfer');
 
     state.stats.startTime = 0;
     state.stats.lastProgressTime = 0;
@@ -1000,6 +1035,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.stats.totalBytes = offer.size;
     updateTransferUIState('idle');
     showScreen('connected');
+    selectView('files');
     state.pendingOffer = offer;
     state.transferState = 'awaiting-decision';
 
@@ -1007,87 +1043,11 @@ document.addEventListener('DOMContentLoaded', () => {
       receiverWaitingBox.style.display = 'none';
     }
 
-    if (incomingSection && incomingFilename) {
-      incomingFilename.textContent = offer.name;
-      if (incomingFilesize) incomingFilesize.textContent = formatFileSize(offer.size);
-      if (incomingFilemeta) incomingFilemeta.textContent = `${offer.mimeType || 'application/octet-stream'} · from ${peerDeviceLabel.textContent}`;
-      incomingSection.style.display = 'flex';
-      btnAcceptTransfer.focus({ preventScroll: true });
-    } else {
-      showIncomingOfferFallback(offer);
-    }
-  }
-
-  /**
-   * Show incoming file offer card fallback for testing
-   */
-  function showIncomingOfferFallback(offer) {
-    let fallback = document.getElementById('incoming-offer-fallback');
-    if (!fallback) {
-      fallback = document.createElement('div');
-      fallback.id = 'incoming-offer-fallback';
-      fallback.style.cssText = `
-        background: #FFFFFF;
-        border: 1px solid var(--color-mist);
-        border-radius: 14px;
-        padding: 20px 24px;
-        margin-top: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 16px;
-        width: 100%;
-        max-width: 440px;
-        box-sizing: border-box;
-      `;
-
-      fallback.innerHTML = `
-        <p style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px;">Incoming file</p>
-        <div style="background: var(--color-fog); border: 1px solid var(--color-mist); border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; gap: 14px; width: 100%; box-sizing: border-box;">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FF5A3C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <path d="M14 2v6h6"></path>
-          </svg>
-          <div style="min-width: 0; flex: 1;">
-            <p id="fallback-incoming-filename" style="margin: 0; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></p>
-            <p id="fallback-incoming-meta" style="margin: 2px 0 0; font-size: 12px; color: var(--color-steel);"></p>
-          </div>
-        </div>
-        <div style="display: flex; gap: 12px; width: 100%;">
-          <button type="button" class="btn btn-secondary" id="fallback-btn-decline" style="flex: 1;">Decline</button>
-          <button type="button" class="btn btn-primary" id="fallback-btn-accept" style="flex: 1;">Accept transfer</button>
-        </div>
-        <p style="margin: 0; font-size: 11px; color: var(--color-steel);">Nothing is downloaded until you accept.</p>
-      `;
-
-      const connectedCard = document.querySelector('#screen-connected .connected-card');
-      if (connectedCard) {
-        connectedCard.appendChild(fallback);
-      }
-    }
-
-    const nameEl = document.getElementById('fallback-incoming-filename');
-    const metaEl = document.getElementById('fallback-incoming-meta');
-    if (nameEl) nameEl.textContent = offer.name;
-    if (metaEl) metaEl.textContent = `${formatFileSize(offer.size)} · SHA-256 ready`;
-
-    fallback.style.display = 'flex';
-
-    const btnAccept = document.getElementById('fallback-btn-accept');
-    const btnDecline = document.getElementById('fallback-btn-decline');
-
-    if (btnAccept) {
-      btnAccept.onclick = () => {
-        fallback.style.display = 'none';
-        acceptIncomingTransfer();
-      };
-    }
-    if (btnDecline) {
-      btnDecline.onclick = () => {
-        fallback.style.display = 'none';
-        declineIncomingTransfer();
-      };
-    }
+    incomingFilename.textContent = offer.name;
+    incomingFilesize.textContent = formatFileSize(offer.size);
+    incomingFilemeta.textContent = (offer.mimeType || 'File') + ' · from ' + peerDeviceLabel.textContent;
+    incomingSection.style.display = 'flex';
+    btnAcceptTransfer.focus({ preventScroll: true });
   }
 
   /**
@@ -1096,7 +1056,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function acceptIncomingTransfer() {
     try {
       updateActiveFileBadge(state.pendingOffer);
-      showScreen('transfer');
       updateTransferUIState('ready');
       if (transferHeading) transferHeading.textContent = 'Receiving file...';
       if (transferSubtext) {
@@ -1195,7 +1154,6 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function handleTransferError(err) {
     console.warn('[Slipstream] Transfer interrupted');
-    showScreen('transfer');
     updateTransferUIState('failed', { message: state.transferProblem || 'Transfer interrupted. Check the connection and try again.' });
     state.transferProblem = '';
   }
@@ -1215,35 +1173,11 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const parsed = JSON.parse(data);
         if (parsed && parsed.type === 'text') {
-          appendChatLog('Peer', parsed.message);
-          recordActivity(peerDeviceLabel.textContent + ' shared a message');
-          return;
+          if (typeof parsed.message === 'string') textSharing.receive(parsed.message);
         }
       } catch {
-        appendChatLog('Peer', data);
+        textSharing.receive(data);
       }
-    }
-  }
-
-  /**
-   * Phase 1 Test Message: Send message directly across data channel
-   */
-  function sendTestMessage() {
-    const raw = testMessageInput.value;
-    const text = raw.trim();
-    if (!text || !state.peer?.isChannelOpen()) return;
-
-    // Ensure outgoing message is stripped of any legacy/accidental prefixes
-    const cleanText = text.replace(/^(?:(?:You|Peer|System):\s*)+/i, '').trim();
-    if (!cleanText) return;
-
-    try {
-      state.peer.send(JSON.stringify({ type: 'text', message: cleanText }));
-      appendChatLog('You', cleanText);
-      recordActivity('You shared a message');
-      testMessageInput.value = '';
-    } catch (err) {
-      appendChatLog('System', 'Could not send. Check the connection and try again.');
     }
   }
 
@@ -1254,11 +1188,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const panel = byId('queue-panel');
     const list = byId('queue-list');
     list.replaceChildren();
-    panel.hidden = !queue;
+    panel.hidden = !queue?.pending.length;
     if (!queue) return;
     for (const [index, file] of queue.pending.entries()) {
       const row = document.createElement('li');
-      row.append(file.name + ' · ' + (file.type || 'Unknown type') + ' · ' + formatFileSize(file.size) + ' · Queued ',
+      row.append(fileDetails(file.name, formatFileSize(file.size)),
         actionButton('Preview', () => viewer.open({ name: file.name, blob: file, local: true })),
         actionButton('Remove', () => queue.remove(index)));
       list.append(row);
@@ -1307,12 +1241,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    fileDropzone.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        if (fileInput) fileInput.click();
-      }
-    });
   }
 
   if (fileInput) {
@@ -1400,14 +1328,15 @@ document.addEventListener('DOMContentLoaded', () => {
     activityRows = 0;
     byId('activity-list').replaceChildren();
   });
-  byId('save-name').addEventListener('click', () => {
+  byId('nickname-form').addEventListener('submit', event => {
+    event.preventDefault();
     const name = AppMessages.nickname(byId('nickname').value);
     if (!AppMessages.send(state.peer, 'device-name', { name })) {
       byId('name-feedback').textContent = 'Enter a name and check that the connection is open.';
       return;
     }
     localDeviceLabel.textContent = byId('nickname').value = name;
-    (state.role === 'host' ? transferLabelSender : transferLabelReceiver).textContent = name;
+    refreshNames();
     byId('name-feedback').textContent = 'Name shared.';
   });
   byId('new-code').addEventListener('click', regenerateCode);
@@ -1432,7 +1361,8 @@ document.addEventListener('DOMContentLoaded', () => {
   btnStartReceive.addEventListener('click', startJoinFlow);
   btnCancelHost.addEventListener('click', resetApp);
   btnCancelJoin.addEventListener('click', resetApp);
-  btnDisconnect.addEventListener('click', endSession);
+  byId('retry-pairing').onclick = retryConnection;
+  byId('leave-pairing').onclick = resetApp;
   brandLink.addEventListener('click', (e) => {
     e.preventDefault();
     endSession();
@@ -1440,18 +1370,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   joinForm.addEventListener('submit', handleJoinSubmit);
 
-  if (btnScanQr) {
-    btnScanQr.addEventListener('click', () => {
-      alert('Camera access requires HTTPS in browser secure contexts. On local HTTP, please enter the pairing code manually.');
-      if (joinCodeInput) joinCodeInput.focus();
-    });
-  }
-
-  btnSendTestMsg.addEventListener('click', sendTestMessage);
-  testMessageInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      sendTestMessage();
-    }
+  btnScanQr.onclick = setupScanner(byId, code => {
+    joinCodeInput.value = code;
+    handleJoinSubmit();
   });
 
   // Native dialogs contain keyboard focus and restore it to the invoking control.

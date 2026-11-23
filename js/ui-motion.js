@@ -18,15 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
     input.addEventListener(event, () => zone.classList.remove('picking'));
   }
 
-  const header = document.getElementById('header-status');
-  let connected = header.classList.contains('connected');
-  new MutationObserver(() => {
-    const next = header.classList.contains('connected');
-    if (next === connected) return;
-    connected = next;
-    showToast(connected ? 'Device connected' : 'Device disconnected');
-  }).observe(header, { attributes: true, attributeFilter: ['class'] });
-
   const pill = document.getElementById('transfer-state-pill');
   const controls = document.getElementById('transfer-controls');
   let lastMessage = '';

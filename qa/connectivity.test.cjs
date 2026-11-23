@@ -201,6 +201,7 @@ test('selected transport identifies direct and relayed routes despite other nomi
     await flush();
     assert.equal(f.peer.snapshot().selectedRoute.route, type === 'relay' ? 'relayed' : 'direct');
     assert.equal(f.peer.snapshot().selectedRoute.local, type);
+    assert.equal(f.peer.snapshot().selectedRoute.kind, { host: 'local', srflx: 'nat', prflx: 'nat', relay: 'relay' }[type]);
     assert.ok(!JSON.stringify(f.peer.constructor.diagnostics).includes('private-address'));
     f.peer.close();
   }
@@ -228,15 +229,73 @@ test('temporary disconnect recovers within grace period and sustained disconnect
   const pc = f.peer.pc;
   pc.connectionState = 'disconnected';
   pc.onconnectionstatechange();
+  assert.equal(f.peer.stage, 'Reconnecting…');
+  assert.equal(f.peer.isChannelOpen(), true);
+  pc.iceConnectionState = 'checking';
   pc.connectionState = 'connected';
   pc.onconnectionstatechange();
+  assert.equal(f.timers.size, 1);
+  pc.iceConnectionState = 'completed';
+  pc.oniceconnectionstatechange();
+  assert.equal(f.peer.stage, 'Connected');
   assert.equal(f.timers.size, 0);
   assert.equal(f.peer.isClosed, false);
   pc.connectionState = 'disconnected';
   pc.onconnectionstatechange();
-  await f.fire(10000);
+  pc.iceConnectionState = 'disconnected';
+  pc.oniceconnectionstatechange();
+  assert.equal(f.timers.size, 1);
+  await f.fire(30000);
+  assert.equal(f.peer.constructor.lastSnapshot.reason, 'recovery-timeout');
+  assert.deepEqual(Array.from(f.peer.events.filter(e => e.event === 'connection recovery ended'), e => e.outcome), ['recovered', 'recovery-timeout']);
   assert.equal(f.peer.isClosed, true);
   assert.equal(f.errors.length, 1);
   f.peer.connectionFailed();
   assert.equal(f.errors.length, 1);
+});
+
+test('bounded post-open signaling exchanges a late mDNS candidate; expired sessions preserve the channel', async () => {
+  for (const expired of [true, false]) {
+    const posted = [];
+    const f = fixture({ SLIPSTREAM_TURN_CONFIG: {}, Api: {
+      async sendIceCandidate(code, role, candidate) { posted.push(candidate); },
+      async getIceCandidates() {
+        if (expired) throw Object.assign(new Error(), { status: 404 });
+        return [{ candidate: 'remote.local' }];
+      },
+    } });
+    await f.peer.start();
+    const pc = f.peer.pc;
+    pc.remoteDescription = {};
+    pc.addIceCandidate = async c => assert.equal(c.candidate, 'remote.local');
+    const channel = { readyState: 'open', close() {} };
+    pc.ondatachannel({ channel });
+    channel.onopen();
+    pc.onicecandidate({ candidate: { type: 'host', address: 'private.local',
+      toJSON: () => ({ candidate: 'local.local' }) } });
+    await f.fire(2500);
+    assert.equal(posted.length, expired ? 0 : 1);
+    assert.equal(f.peer.applied, expired ? 0 : 1);
+    if (!expired) await f.fire(10000);
+    assert.equal(f.timers.size, 0);
+    assert.equal(f.peer.isChannelOpen(), true);
+    assert.equal(f.errors.length, 0);
+    assert.ok(!JSON.stringify(f.peer.events).includes('private.local'));
+    f.peer.close();
+  }
+});
+
+test('stats requested before close reach the closed attempt even after native teardown', async () => {
+  const f = fixture();
+  let resolve;
+  f.peer.pc = { getStats: () => new Promise(r => { resolve = r; }), close() {} };
+  f.peer.connectionFailed(undefined, 'ice-failed');
+  resolve(new Map([
+    ['t', { type: 'transport', selectedCandidatePairId: 'p' }],
+    ['p', { type: 'candidate-pair', localCandidateId: 'l' }],
+    ['l', { type: 'local-candidate', candidateType: 'relay' }],
+  ]));
+  await flush();
+  assert.equal(f.peer.constructor.lastSnapshot.selectedRoute.route, 'relayed');
+  assert.equal(f.peer.events.at(-1).pairs[0].selected, true);
 });

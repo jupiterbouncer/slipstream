@@ -140,11 +140,11 @@ try {
   const first = await codeOf(sender);
   assert.equal(await sender.evaluate("Api.getSession(" + JSON.stringify(replaced) + ").then(() => 200, e => e.status)"), 404);
   await sender.evaluate("Api.deleteSession("+JSON.stringify(first)+")");
-  const failure = tab => waitFor('connection failure', () => tab.evaluate("document.querySelector('#transfer-heading').textContent === 'Connection failed'"));
+  const failure = tab => waitFor('connection failure', () => tab.evaluate("!!document.querySelector('#screen-failed.active')"));
   await failure(sender);
-  const gated = tab => tab.evaluate("document.querySelector('#phase-chat').hidden && document.querySelector('#btn-send-test-msg').disabled && !document.querySelector('#screen-connected.active')");
+  const gated = tab => tab.evaluate("!document.querySelector('#screen-connected.active')");
   assert.ok(await gated(sender));
-  await sender.click('#btn-retry-transfer');
+  await sender.click('#retry-pairing');
   const second = await codeOf(sender);
   assert.notEqual(second,first); assert.ok(await gated(sender));
   await receiver.command('Page.navigate',{url:origin});
@@ -154,11 +154,11 @@ try {
   await receiver.evaluate("document.querySelector('#join-code-input').value="+JSON.stringify(second));
   await receiver.click('#btn-submit-join');
   await failure(receiver);
-  await receiver.click('#btn-retry-transfer');
+  await receiver.click('#retry-pairing');
   assert.ok(await receiver.evaluate("!!document.querySelector('#screen-join.active') && !document.querySelector('#join-code-input').value"));
   assert.ok(await gated(receiver)); await failure(sender);
   await sender.evaluate("window.postAttempts=0;const sendCandidate=Api.sendIceCandidate;Api.sendIceCandidate=(...args)=>{if(++postAttempts===1) return Promise.reject(Object.assign(new Error('Injected transient error'),{status:503}));return sendCandidate(...args)}");
-  await sender.click('#btn-retry-transfer');
+  await sender.click('#retry-pairing');
   console.log('Both roles recovered from pre-open failures with chat gated.');
   const code = await waitFor('pairing code', async () => {
     const value = await sender.evaluate("document.querySelector('#host-code-text')?.textContent");
@@ -168,12 +168,13 @@ try {
   for (const browser of [sender, receiver])
     await waitFor('open data channel', () => browser.evaluate("!!document.querySelector('#screen-connected.active')"));
   assert.ok(await sender.evaluate('postAttempts>=2'));
-  await sender.evaluate("document.querySelector('#test-message-input').value='recovered chat'; document.querySelector('#btn-send-test-msg').click()");
-  await waitFor('chat delivery',()=>receiver.evaluate("document.querySelector('#test-chat-log').textContent.includes('recovered chat')"));
-  await receiver.click('#test-message-input');
-  await receiver.evaluate("document.querySelector('#test-message-input').value='receiver reply'");
-  await receiver.click('#btn-send-test-msg');
-  await waitFor('receiver reply',()=>sender.evaluate("document.querySelector('#test-chat-log').textContent.includes('receiver reply')"));
+  for (const tab of [sender, receiver]) await tab.click('#tab-messages');
+  await sender.evaluate("document.querySelector('#share-text').value='recovered chat'; document.querySelector('#send-text').click()");
+  await waitFor('chat delivery',()=>receiver.evaluate("document.querySelector('#received-text').textContent.includes('recovered chat')"));
+  await receiver.click('#share-text');
+  await receiver.evaluate("document.querySelector('#share-text').value='receiver reply'");
+  await receiver.click('#send-text');
+  await waitFor('receiver reply',()=>sender.evaluate("document.querySelector('#received-text').textContent.includes('receiver reply')"));
   await receiver.evaluate(`window.receivedProgress=[];const originalChunk=SlipstreamFileReceiver.prototype.handleBinaryChunk;
     SlipstreamFileReceiver.prototype.handleBinaryChunk=function(chunk) {
       originalChunk.call(this,chunk);
@@ -181,19 +182,21 @@ try {
       receivedProgress.push({text:document.querySelector('#transfer-percentage-text').textContent,variable:fill.style.getPropertyValue('--trail-progress')});
     };`);
   console.log('Transient ICE POST recovery and bidirectional chat passed.');
+  await sender.click('#tab-files');
   const name = 'slipstream-test.bin', original = randomBytes(1024 * 1024 + 1);
   const fixture = path.join(temp, name);
   await writeFile(fixture, original);
   await sender.selectFiles('#file-input', [fixture]);
   await sender.click('#btn-send-file');
   await waitFor('offer',()=>receiver.evaluate("!!document.querySelector('#btn-accept-transfer').getClientRects().length"));
-  await receiver.evaluate("document.querySelector('#test-message-input').value='chat during offer'");
-  await receiver.click('#btn-send-test-msg');
-  await waitFor('chat during offer',()=>sender.evaluate("document.querySelector('#test-chat-log').textContent.includes('chat during offer')"));
+  await receiver.click('#tab-messages');
+  await receiver.evaluate("document.querySelector('#share-text').value='chat during offer'");
+  await receiver.click('#send-text');
+  await waitFor('chat during offer',()=>sender.evaluate("document.querySelector('#received-text').textContent.includes('chat during offer')"));
+  await receiver.click('#tab-files');
   await receiver.click('#btn-accept-transfer');
   for (const browser of [receiver, sender])
     await waitFor('verified completion', () => browser.evaluate("!!document.querySelector('#transfer-state-pill.completed')"));
-  for (const tab of [sender,receiver]) assert.ok(await tab.evaluate("!!document.querySelector('#phase-chat').getClientRects().length && !document.querySelector('#phase-chat').hidden"));
   assert.ok(await receiver.evaluate("receivedProgress.some(p=>parseInt(p.text)>0 && parseInt(p.text)<100) && receivedProgress.every(p=>p.text===p.variable)"));
   for (const width of [320,360,375,390,430,768,1280]) {
     await receiver.command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width<600});
@@ -204,16 +207,41 @@ try {
         fill.style.setProperty('--trail-progress','${percent}%');
         const f=fill.getBoundingClientRect(),track=fill.parentElement.getBoundingClientRect();
         const vertical=track.height>track.width;
-        return {ratio:vertical ? f.height/track.height : f.width/track.width, overflow:document.documentElement.scrollWidth>innerWidth};
+        const label=document.querySelector('#transfer-percentage-text');
+        const range=document.createRange();
+        range.selectNodeContents(label);
+        const strip=document.querySelector('.security-strip').getBoundingClientRect();
+        const copy=document.querySelector('#security-copy');
+        const shield=document.querySelector('.security-strip svg').getBoundingClientRect();
+        const centered=Math.abs((shield.left + copy.getBoundingClientRect().right) / 2 - (strip.left + strip.width / 2)) < 2;
+        return {ratio:vertical ? f.height/track.height : f.width/track.width, overflow:document.documentElement.scrollWidth>innerWidth,
+          percentLines:range.getClientRects().length, centered};
       })()`);
       assert.ok(Math.abs(dimensions.ratio-percent/100)<0.02, JSON.stringify({width,percent,dimensions}));
       assert.equal(dimensions.overflow,false,'horizontal overflow at '+width);
+      assert.equal(dimensions.percentLines,1,'percentage fits on one line at '+width);
+      assert.ok(dimensions.centered,'security strip centered at '+width);
+      assert.ok(await receiver.evaluate(`(() => {
+        const copy = document.querySelector('#security-copy');
+        const actual = copy.textContent;
+        const range = document.createRange();
+        try {
+          for (const text of ['Direct · DTLS encrypted · Server pairs devices', 'Via TURN · DTLS encrypted · Server pairs devices', 'DTLS encrypted · Server pairs devices']) {
+            copy.textContent = text;
+            range.selectNodeContents(copy);
+            if (range.getClientRects().length !== 1) return false;
+          }
+          return true;
+        } finally { copy.textContent = actual; }
+      })()`), 'single-line security strip at '+width);
     }
   }
-  await receiver.evaluate("document.querySelector('#transfer-trail-fill').style.setProperty('--trail-progress','100%');document.querySelector('#test-message-input').value='chat after completion'");
-  await receiver.click('#btn-send-test-msg');
-  await waitFor('chat after completion',()=>sender.evaluate("document.querySelector('#test-chat-log').textContent.includes('chat after completion')"));
+  await receiver.click('#tab-messages');
+  await receiver.evaluate("document.querySelector('#transfer-trail-fill').style.setProperty('--trail-progress','100%');document.querySelector('#share-text').value='chat after completion'");
+  await receiver.click('#send-text');
+  await waitFor('chat after completion',()=>sender.evaluate("document.querySelector('#received-text').textContent.includes('chat after completion')"));
   console.log('Chat before/during offers and after completion; actual receiver progress and seven viewport layouts passed.');
+  await receiver.click('#tab-files');
   await receiver.click('#btn-download-file');
   const bytes = await waitFor('download', () => readFile(path.join(downloadPath, name)).catch(() => null));
   assert.deepEqual(bytes, original);
@@ -224,9 +252,14 @@ try {
   await sender.click('#btn-send-file');
   await waitFor('second offer',()=>receiver.evaluate("!!document.querySelector('#btn-accept-transfer').getClientRects().length"));
   await receiver.evaluate("window.testPeer.close()");
-  await waitFor('interrupted transfer',()=>sender.evaluate("document.querySelector('#transfer-heading').textContent === 'Transfer interrupted'"));
+  for (const tab of [sender, receiver]) await waitFor('home after channel close', () => tab.evaluate("!!document.querySelector('#screen-home.active') && !document.querySelector('#home-notice').hidden"));
+  assert.equal(await receiver.evaluate("document.querySelectorAll('#saved-files li').length"), 3);
+  assert.equal(await receiver.evaluate("document.querySelector('#saved-files a').href.startsWith('blob:')"), true);
+  await receiver.click('#saved-files button');
+  assert.ok(await receiver.evaluate("document.querySelector('#file-viewer').open"));
+  await receiver.click('#file-viewer button');
   assert.ok(await gated(sender));
-  await sender.click('[data-modal="modal-help"]');
+  await sender.click('.nav-links [data-modal="modal-help"]');
   await sender.click('#btn-download-diagnostics');
   const reportBytes = await waitFor('connection report download', () =>
     readFile(path.join(downloadPath, 'slipstream-connection.json')).catch(() => null));
@@ -241,10 +274,67 @@ try {
   assert.ok(!reportBytes.toString().includes('localCandidateId'));
   await sender.click('#modal-help [data-close-modal]');
   console.log('Connection report downloaded after channel closure.');
-  await sender.click('#btn-retry-transfer');
-  assert.notEqual(await codeOf(sender),code);
-  await sender.evaluate("document.querySelector('#brand-link').click()");
-  console.log('Actual channel close interrupted the second offer and Retry created a fresh pairing.');
+  // Join again through the full camera pipeline using the host's rendered QR.
+  await sender.click('#btn-start-send');
+  const cameraCode = await codeOf(sender);
+  const qr = await sender.evaluate("document.querySelector('#qr-display canvas').toDataURL()");
+  await receiver.click('#btn-start-receive');
+  for (const [error, wording] of [['NotAllowedError', 'denied'], ['NotFoundError', 'No camera']]) {
+    await receiver.evaluate("navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('', " + JSON.stringify(error) + ") }");
+    await receiver.click('#btn-scan-qr');
+    await waitFor('scanner error ' + error, () => receiver.evaluate("document.querySelector('#scanner-status').textContent.includes(" + JSON.stringify(wording) + ")"));
+    await receiver.click('#scanner-manual');
+  }
+  await receiver.evaluate(`window.testQR = new Image(); testQR.src = ${JSON.stringify(qr)}; testQR.decode()`);
+  await receiver.evaluate(`navigator.mediaDevices.getUserMedia = async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 400;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white'; ctx.fillRect(0,0,400,400);
+    const draw = () => ctx.drawImage(testQR,60,60,280,280);
+    draw();
+    const stream = canvas.captureStream(12);
+    const timer = setInterval(() => {
+      if (stream.getVideoTracks()[0].readyState === 'ended') clearInterval(timer);
+      else draw();
+    }, 100);
+    window.cameraTrack = stream.getVideoTracks()[0];
+    return stream;
+  }`);
+  // First feed an unrelated QR and an expired host link through the same stream.
+  const replaceQR = value => receiver.evaluate(`(() => {
+    const node = document.createElement('div');
+    new QRCode(node, { text: ${JSON.stringify(value)}, width: 200, height: 200 });
+    testQR.src = node.querySelector('canvas').toDataURL();
+    return testQR.decode();
+  })()`);
+  await replaceQR('https://example.org/?join=ABCDEF');
+  await receiver.click('#btn-scan-qr');
+  await waitFor('unrelated QR', () => receiver.evaluate("document.querySelector('#scanner-status').textContent.includes('Unrecognized')"));
+  await replaceQR(origin + '/?join=' + replaced);
+  await waitFor('retired code', () => receiver.evaluate("document.querySelector('#join-error-msg').textContent.includes('expired')"));
+  await receiver.evaluate("testQR.src = " + JSON.stringify(qr) + "; testQR.decode()");
+  await receiver.click('#btn-scan-qr');
+  await waitFor('QR auto-join', () => receiver.evaluate("!!document.querySelector('#screen-connected.active')"));
+  assert.equal(await receiver.evaluate("document.querySelector('#join-code-input').value"), cameraCode);
+  assert.equal(await receiver.evaluate("cameraTrack.readyState"), 'ended');
+  await sender.click('.settings-trigger');
+  await sender.click('#end-session');
+  await waitFor('receiver home', () => receiver.evaluate("!!document.querySelector('#screen-home.active')"));
+  await sender.click('#btn-start-send');
+  const manualCode = await codeOf(sender);
+  await receiver.click('#btn-start-receive');
+  await receiver.evaluate("document.querySelector('#join-code-input').value=" + JSON.stringify(manualCode));
+  await receiver.click('#btn-submit-join');
+  await waitFor('manual pairing', () => receiver.evaluate("!!document.querySelector('#screen-connected.active')"));
+  // Drive the native state-change listener while leaving the real RTCDataChannel open.
+  await receiver.evaluate("Object.defineProperty(testPeer, 'iceConnectionState', {configurable:true, value:'disconnected'}); testPeer.dispatchEvent(new Event('iceconnectionstatechange'))");
+  assert.ok(await receiver.evaluate("!!document.querySelector('#screen-connected.active') && document.querySelector('#header-status').classList.contains('recovering')"));
+  await receiver.evaluate("delete testPeer.iceConnectionState;testPeer.dispatchEvent(new Event('iceconnectionstatechange'))");
+  assert.ok(await receiver.evaluate("document.querySelector('#header-status-text').textContent === 'Connected'"));
+  await receiver.evaluate("Object.defineProperty(testPeer, 'iceConnectionState', {configurable:true, value:'disconnected'}); testPeer.dispatchEvent(new Event('iceconnectionstatechange'))");
+  await waitFor('recovery expiry', () => receiver.evaluate("!!document.querySelector('#screen-home.active') && !document.querySelector('#home-notice').hidden"));
+  console.log('QR camera join, manual join, temporary recovery, recovery timeout and retained verified files passed.');
 } catch (error) {
   console.error(error.message);
   throw error;

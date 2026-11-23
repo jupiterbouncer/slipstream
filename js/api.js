@@ -84,8 +84,9 @@ const Api = (() => {
     /**
      * Host submits SDP offer (POST /sessions/{code}/offer)
      */
-    async sendOffer(code, offer) {
+    async sendOffer(code, offer, signal) {
       return await request(`${BASE_URL}/${encodeURIComponent(code)}/offer`, {
+        signal,
         method: 'POST',
         body: JSON.stringify({ offer }),
       });

@@ -6,6 +6,20 @@
 
 // Time between completed signaling polls on shared hosting.
 const SIGNALING_POLL_MS = 2500;
+// Allow one consent-expiry interval for a path to recover. Native failures end it sooner.
+const DISCONNECT_RECOVERY_MS = 30000;
+const POST_OPEN_TRICKLE_MS = 4 * SIGNALING_POLL_MS;
+
+function transientSignalingError(error) {
+  return error instanceof TypeError || error.name === 'InvalidStateError' || error.status === 408 || error.status >= 500;
+}
+
+function addressFamily(address) {
+  if (!address) return undefined;
+  if (/\.local\.?$/i.test(address)) return 'mDNS';
+  if (address.includes(':')) return 'IPv6';
+  if (/^\d+(\.\d+){3}$/.test(address)) return 'IPv4';
+}
 
 class SlipstreamPeer {
   static diagnostics = [];
@@ -55,10 +69,13 @@ class SlipstreamPeer {
     this.selectedRoute = { route: 'unknown' };
     this.pendingCandidates = [];
     this.disconnectTimer = null;
+    this.disconnectStarted = null;
+    this.channelOpened = false;
+    this.trickleTimer = null;
     this.candidateCursor = 0;
     this.receiveQueue = Promise.resolve();
     SlipstreamPeer.lastSnapshot = null;
-    SlipstreamPeer.diagnostics = [];
+    this.events = SlipstreamPeer.diagnostics = [];
 
     // Standard STUN configuration for local candidate discovery
     this.rtcConfig = {
@@ -92,8 +109,9 @@ class SlipstreamPeer {
       }
 
       this.pc.onicecandidate = ({ candidate }) => {
-        if (candidate && !this.isClosed && !this.isChannelOpen()) {
+        if (candidate && !this.isClosed && (!this.channelOpened || this.pollController)) {
           this.pendingCandidates.push(candidate.toJSON());
+          this.log('local ICE candidate gathered', { type: candidate.type, family: addressFamily(candidate.address) });
         }
       };
       this.pc.onicecandidateerror = event => this.log('ICE gathering error', { code: event.errorCode });
@@ -102,19 +120,13 @@ class SlipstreamPeer {
       this.pc.oniceconnectionstatechange = () => {
         this.log('ICE connection', { state: this.pc.iceConnectionState });
         this.logCandidatePairs();
-        if (this.pc.iceConnectionState === 'failed') this.connectionFailed();
+        this.checkConnection();
       };
       this.pc.onconnectionstatechange = () => {
         const state = this.pc.connectionState;
         this.log('peer connection', { state });
-        if (state === 'failed') return this.connectionFailed();
-        if (state === 'disconnected') {
-          this.disconnectTimer ??= setTimeout(() => this.connectionFailed(), 10000);
-          return;
-        }
-        clearTimeout(this.disconnectTimer);
-        this.disconnectTimer = null;
-        if (!this.isChannelOpen() && (state === 'connecting' || state === 'connected')) {
+        this.checkConnection();
+        if (!this.isClosed && this.disconnectStarted === null && !this.isChannelOpen() && (state === 'connecting' || state === 'connected')) {
           this.onStatusChange('Establishing secure connection…');
         }
       };
@@ -128,6 +140,38 @@ class SlipstreamPeer {
       if (this.isClosed) return;
       this.connectionFailed(err);
     }
+  }
+
+  checkConnection() {
+    if (this.isClosed) return;
+    const { iceConnectionState: ice, connectionState: peer } = this.pc;
+    if (ice === 'failed' || peer === 'failed') {
+      this.connectionFailed(undefined, ice === 'failed' ? 'ice-failed' : 'peer-failed');
+      return;
+    }
+    if (ice === 'disconnected' || peer === 'disconnected') {
+      if (this.disconnectStarted !== null) return;
+      this.disconnectStarted = Date.now();
+      this.log('connection recovery started', { windowMs: DISCONNECT_RECOVERY_MS });
+      this.onStatusChange('Reconnecting…');
+      this.disconnectTimer = setTimeout(() => {
+        this.checkConnection();
+        if (!this.isClosed && this.disconnectStarted !== null) this.connectionFailed(undefined, 'recovery-timeout');
+      }, DISCONNECT_RECOVERY_MS);
+    } else if (this.disconnectStarted !== null && (!ice || ice === 'connected' || ice === 'completed')
+      && (!peer || peer === 'connected')) {
+      this.finishRecovery('recovered');
+      this.onStatusChange(this.isChannelOpen() ? 'Connected' : 'Establishing secure connection…');
+      this.logCandidatePairs();
+    }
+  }
+
+  finishRecovery(outcome) {
+    if (this.disconnectStarted === null) return;
+    clearTimeout(this.disconnectTimer);
+    this.disconnectTimer = null;
+    this.log('connection recovery ended', { outcome, durationMs: Date.now() - this.disconnectStarted });
+    this.disconnectStarted = null;
   }
 
   /**
@@ -145,14 +189,7 @@ class SlipstreamPeer {
     await this.pc.setLocalDescription(offer);
     if (this.isClosed) return;
 
-    await Api.sendOffer(this.code, {
-      sdp: offer.sdp,
-      type: offer.type,
-    });
-
-    if (this.isClosed) return;
-    this.onStatusChange('Waiting for the other device…');
-    this.startHostPolling();
+    this.startHostPolling({ sdp: offer.sdp, type: offer.type });
   }
 
   /**
@@ -172,8 +209,14 @@ class SlipstreamPeer {
   /**
    * Host polling loop: waits for answer and fetches joiner's ICE candidates.
    */
-  startHostPolling() {
+  startHostPolling(pendingOffer) {
     this.startPolling(async signal => {
+      if (pendingOffer) {
+        await Api.sendOffer(this.code, pendingOffer, signal);
+        pendingOffer = null;
+        if (!signal.aborted) this.onStatusChange('Waiting for the other device…');
+        return;
+      }
       if (!this.pc.remoteDescription) {
         const answer = await Api.getAnswer(this.code, signal);
         if (signal.aborted || !answer) return;
@@ -182,7 +225,7 @@ class SlipstreamPeer {
         if (!signal.aborted) this.onStatusChange('Establishing secure connection…');
       }
       if (!signal.aborted) await this.pollCandidates('joiner', signal);
-    });
+    }, true);
   }
 
   startJoinerPolling() {
@@ -210,13 +253,20 @@ class SlipstreamPeer {
     });
   }
 
-  startPolling(step) {
+  startPolling(step, immediate = false) {
     if (this.isClosed || this.isChannelOpen() || this.pollController) return;
     this.pollController = new AbortController();
     const { signal } = this.pollController;
     let failures = 0;
     const poll = async () => {
       try {
+        let readError;
+        try {
+          await step(signal);
+        } catch (error) {
+          if (!transientSignalingError(error)) throw error;
+          readError = error;
+        }
         // Remove only acknowledged candidates. A transient POST failure retries
         // through the same bounded poll scheduler. Receivers deduplicate replays.
         while (this.pendingCandidates.length && !signal.aborted) {
@@ -226,15 +276,16 @@ class SlipstreamPeer {
           this.log('local ICE candidate acknowledged');
         }
         if (signal.aborted) return;
-        await step(signal);
-        if (!signal.aborted) this.logCandidatePairs();
+        if (readError) throw readError;
+        this.logCandidatePairs();
         failures = 0;
       } catch (err) {
         if (signal.aborted) return;
         failures++;
-        const transient = err instanceof TypeError || err.name === 'InvalidStateError' || err.status === 408 || err.status >= 500;
-        if (!transient || failures >= 5) {
-          this.connectionFailed(err);
+        this.log('signaling poll failed', { status: err.status, error: err.name, failures });
+        if (!transientSignalingError(err) || failures >= 5) {
+          if (this.channelOpened) this.stopPolling();
+          else this.connectionFailed(err, 'signaling-failed');
           return;
         }
       }
@@ -243,7 +294,8 @@ class SlipstreamPeer {
         this.pollTimer = setTimeout(poll, delay);
       }
     };
-    this.pollTimer = setTimeout(poll, this.pollIntervalMs);
+    if (immediate) void poll();
+    else this.pollTimer = setTimeout(poll, this.pollIntervalMs);
   }
 
   /**
@@ -255,15 +307,16 @@ class SlipstreamPeer {
     const candidates = await Api.getIceCandidates(this.code, peerRole, this.candidateCursor, signal);
     for (const c of candidates) {
       if (signal.aborted) return;
-      const candidateKey = JSON.stringify(c);
+      const candidateKey = JSON.stringify([c?.candidate, c?.sdpMid, c?.sdpMLineIndex, c?.usernameFragment]);
       if (!this.processedCandidates.has(candidateKey) && !this.rejectedCandidates.has(candidateKey)) {
         try {
-          await this.pc.addIceCandidate(new RTCIceCandidate(c));
+          const candidate = new RTCIceCandidate(c);
+          await this.pc.addIceCandidate(candidate);
           if (signal.aborted || this.isClosed) return;
           this.processedCandidates.add(candidateKey);
           this.candidateRetries.delete(candidateKey);
           this.applied++;
-          this.log('remote ICE candidate accepted', { index: this.candidateCursor });
+          this.log('remote ICE candidate accepted', { index: this.candidateCursor, type: candidate.type, family: addressFamily(candidate.address) });
         } catch (candidateErr) {
           if (signal.aborted) return;
           this.applyFailures++;
@@ -289,9 +342,15 @@ class SlipstreamPeer {
     channel.binaryType = 'arraybuffer';
 
     channel.onopen = () => {
+      this.channelOpened = true;
+      this.log('data channel open');
       this.logCandidatePairs();
-      this.onStatusChange('Connected');
-      this.stopPolling();
+      this.iceTransport = this.pc?.sctp?.transport?.iceTransport;
+      this.onPairChange = () => this.logCandidatePairs();
+      this.iceTransport?.addEventListener?.('selectedcandidatepairchange', this.onPairChange);
+      this.onStatusChange(this.disconnectStarted === null ? 'Connected' : 'Reconnecting…');
+      // Give both devices a few normal polls to exchange late direct candidates.
+      if (this.pollController) this.trickleTimer = setTimeout(() => this.stopPolling(), POST_OPEN_TRICKLE_MS);
       this.onChannelOpen(channel);
     };
 
@@ -303,11 +362,12 @@ class SlipstreamPeer {
     channel.onclose = () => {
       this.stopPolling();
       this.log('data channel closed');
+      this.close('data-channel-closed');
       this.onChannelClose();
     };
 
     channel.onerror = (err) => {
-      this.connectionFailed(err.error);
+      this.connectionFailed(err.error, 'data-channel-error');
     };
   }
 
@@ -410,9 +470,9 @@ class SlipstreamPeer {
 
   log(event, details = {}) {
     console.debug('[Slipstream WebRTC]', this.role, event, details);
-    SlipstreamPeer.diagnostics.push({ time: new Date().toISOString(), role: this.role, event, ...details });
+    this.events.push({ time: new Date().toISOString(), role: this.role, event, ...details });
     // Bound memory and retain the last attempt after its peer is closed.
-    if (SlipstreamPeer.diagnostics.length > 200) SlipstreamPeer.diagnostics.shift();
+    if (this.events.length > 200) this.events.shift();
   }
 
   snapshot() {
@@ -431,15 +491,16 @@ class SlipstreamPeer {
     if (!pc?.getStats || this.statsPending) return;
     this.statsPending = true;
     pc.getStats().then(report => {
-      if (this.pc !== pc) return;
+      if (this.events !== SlipstreamPeer.diagnostics) return;
       const pairs = [];
       const candidates = [];
-      let selectedPair;
+      let selectedId;
       report.forEach(row => {
         if (row.type === 'transport' && row.selectedCandidatePairId) {
-          selectedPair = report.get(row.selectedCandidatePairId);
+          selectedId = row.selectedCandidatePairId;
         }
       });
+      const selectedPair = report.get(selectedId);
       let local = report.get(selectedPair?.localCandidateId)?.candidateType;
       let remote = report.get(selectedPair?.remoteCandidateId)?.candidateType;
       if (!selectedPair) {
@@ -448,17 +509,28 @@ class SlipstreamPeer {
         local = selected?.local?.type;
         remote = selected?.remote?.type;
       }
+      if (this.isClosed && !local && !remote && !Array.from(report.values()).some(row => row.type === 'candidate-pair')) {
+        this.log('final ICE statistics unavailable');
+        return;
+      }
+      const relayed = local === 'relay' || remote === 'relay';
+      let kind = 'unknown';
+      if (relayed) kind = 'relay';
+      else if (local === 'host' && remote === 'host') kind = 'local';
+      else if (local && remote && [local, remote].some(type => type === 'srflx' || type === 'prflx')) kind = 'nat';
       this.selectedRoute = {
-        route: local && remote ? (local === 'relay' || remote === 'relay' ? 'relayed' : 'direct') : 'unknown',
+        route: relayed ? 'relayed' : kind === 'unknown' ? 'unknown' : 'direct', kind,
         local, remote,
       };
-      report.forEach(row => {
+      report.forEach((row, id) => {
         if (row.type === 'local-candidate' || row.type === 'remote-candidate') {
-          candidates.push({ side: row.type, type: row.candidateType, protocol: row.protocol });
+          candidates.push({ side: row.type, type: row.candidateType, protocol: row.protocol, family: addressFamily(row.address) });
         }
         if (row.type === 'candidate-pair') pairs.push({
-          selected: row === selectedPair,
+          selected: selectedId ? id === selectedId : undefined,
           state: row.state, nominated: !!row.nominated,
+          priority: row.priority, bytesSent: row.bytesSent, bytesReceived: row.bytesReceived,
+          consentRequestsSent: row.consentRequestsSent, currentRoundTripTime: row.currentRoundTripTime,
           local: report.get(row.localCandidateId)?.candidateType,
           remote: report.get(row.remoteCandidateId)?.candidateType,
           requestsSent: row.requestsSent, responsesReceived: row.responsesReceived,
@@ -469,12 +541,13 @@ class SlipstreamPeer {
         this.candidateTypes[side] = [...new Set(candidates.filter(c => c.side === side + '-candidate').map(c => c.type))];
       }
       this.log('ICE candidate pairs', { selectedRoute: this.selectedRoute, candidates, pairs });
+      if (this.isClosed) SlipstreamPeer.lastSnapshot.selectedRoute = this.selectedRoute;
     }).catch(() => {
-      if (this.pc === pc) this.log('ICE statistics unavailable');
+      this.log('ICE statistics unavailable');
     }).finally(() => { this.statsPending = false; });
   }
 
-  connectionFailed(error) {
+  connectionFailed(error, reason = 'connection-setup-failed') {
     if (this.isClosed) return;
     this.logCandidatePairs();
     this.log('connection failed', {
@@ -482,12 +555,14 @@ class SlipstreamPeer {
       signaling: this.pc?.signalingState, remoteCandidatesRead: this.candidateCursor,
       localCandidatesPending: this.pendingCandidates.length,
     });
-    this.onStatusChange("Couldn't connect to device");
-    this.close();
+    this.onStatusChange(this.channelOpened ? 'Connection lost' : "Couldn't connect to device");
+    this.close(reason);
     this.onError(error || new Error("Couldn't connect to device"));
   }
 
   stopPolling() {
+    clearTimeout(this.trickleTimer);
+    this.trickleTimer = null;
     clearTimeout(this.pollTimer);
     this.pollTimer = null;
     this.pollController?.abort();
@@ -497,13 +572,16 @@ class SlipstreamPeer {
   /**
    * Cleanly close all WebRTC and signaling resources.
    */
-  close() {
+  close(reason = 'session-ended') {
     if (this.isClosed) return;
-    if (this.statsPending) this.log('ICE statistics interrupted by closure');
-    SlipstreamPeer.lastSnapshot = { ...this.snapshot(), channel: 'closed', channelOpen: false };
+    this.logCandidatePairs();
+    this.finishRecovery(reason);
+    this.log('connection closed', { reason, channel: this.dataChannel?.readyState || 'unavailable' });
+    SlipstreamPeer.lastSnapshot = { ...this.snapshot(), reason, channel: 'closed', channelOpen: false };
     this.isClosed = true;
     this.turnController?.abort();
-    clearTimeout(this.disconnectTimer);
+    this.iceTransport?.removeEventListener?.('selectedcandidatepairchange', this.onPairChange);
+    this.iceTransport = null;
     this.stopPolling();
     this.receiveQueue = Promise.resolve();
 
