@@ -43,6 +43,12 @@ class SlipstreamPeer {
     this.started = Date.now();
     this.applied = 0;
     this.applyFailures = 0;
+    this.candidateExchange = { postAttempts: 0, acknowledged: 0, receivedRows: 0,
+      gatheredTypes: {}, appliedTypes: {} };
+    this.openedAt = null;
+    this.reliability = { interruptions: 0, recovered: 0, recent: [] };
+    this.gatheringErrors = { total: 0, ungrouped: 0, groups: [] };
+    this.checks = null;
     this.candidateTypes = { local: [], remote: [] };
     this.onStatusChange = status => {
       this.stage = status;
@@ -109,12 +115,13 @@ class SlipstreamPeer {
       }
 
       this.pc.onicecandidate = ({ candidate }) => {
+        if (candidate?.candidate) this.countCandidateType(this.candidateExchange.gatheredTypes, candidate.type);
         if (candidate && !this.isClosed && (!this.channelOpened || this.pollController)) {
           this.pendingCandidates.push(candidate.toJSON());
           this.log('local ICE candidate gathered', { type: candidate.type, family: addressFamily(candidate.address) });
         }
       };
-      this.pc.onicecandidateerror = event => this.log('ICE gathering error', { code: event.errorCode });
+      this.pc.onicecandidateerror = event => this.recordGatheringError(event);
       this.pc.onicegatheringstatechange = () => this.log('ICE gathering', { state: this.pc.iceGatheringState });
       this.pc.onsignalingstatechange = () => this.log('signaling', { state: this.pc.signalingState });
       this.pc.oniceconnectionstatechange = () => {
@@ -152,6 +159,7 @@ class SlipstreamPeer {
     if (ice === 'disconnected' || peer === 'disconnected') {
       if (this.disconnectStarted !== null) return;
       this.disconnectStarted = Date.now();
+      this.reliability.interruptions++;
       this.log('connection recovery started', { windowMs: DISCONNECT_RECOVERY_MS });
       this.onStatusChange('Reconnecting…');
       this.disconnectTimer = setTimeout(() => {
@@ -170,7 +178,12 @@ class SlipstreamPeer {
     if (this.disconnectStarted === null) return;
     clearTimeout(this.disconnectTimer);
     this.disconnectTimer = null;
-    this.log('connection recovery ended', { outcome, durationMs: Date.now() - this.disconnectStarted });
+    const interruption = { startedAt: new Date(this.disconnectStarted).toISOString(),
+      outcome, durationMs: Date.now() - this.disconnectStarted };
+    if (outcome === 'recovered') this.reliability.recovered++;
+    this.reliability.recent.push(interruption);
+    if (this.reliability.recent.length > 20) this.reliability.recent.shift();
+    this.log('connection recovery ended', interruption);
     this.disconnectStarted = null;
   }
 
@@ -270,9 +283,11 @@ class SlipstreamPeer {
         // Remove only acknowledged candidates. A transient POST failure retries
         // through the same bounded poll scheduler. Receivers deduplicate replays.
         while (this.pendingCandidates.length && !signal.aborted) {
+          this.candidateExchange.postAttempts++;
           await Api.sendIceCandidate(this.code, this.role, this.pendingCandidates[0], signal);
           if (signal.aborted) return;
           this.pendingCandidates.shift();
+          this.candidateExchange.acknowledged++;
           this.log('local ICE candidate acknowledged');
         }
         if (signal.aborted) return;
@@ -305,9 +320,18 @@ class SlipstreamPeer {
     if (!this.pc || !this.pc.remoteDescription) return;
 
     const candidates = await Api.getIceCandidates(this.code, peerRole, this.candidateCursor, signal);
-    for (const c of candidates) {
+    if (signal.aborted) return;
+    const start = this.candidateCursor;
+    this.candidateExchange.receivedRows = Math.max(this.candidateExchange.receivedRows, start + candidates.length);
+    // Keep the cursor at the first gap. Later accepted rows are deduplicated on replay.
+    let retryError;
+    const deferred = new Set();
+    for (const [offset, c] of candidates.entries()) {
       if (signal.aborted) return;
+      if (retryError && c?.candidate === '') break;
+      const index = start + offset;
       const candidateKey = JSON.stringify([c?.candidate, c?.sdpMid, c?.sdpMLineIndex, c?.usernameFragment]);
+      if (deferred.has(candidateKey)) continue;
       if (!this.processedCandidates.has(candidateKey) && !this.rejectedCandidates.has(candidateKey)) {
         try {
           const candidate = new RTCIceCandidate(c);
@@ -316,23 +340,28 @@ class SlipstreamPeer {
           this.processedCandidates.add(candidateKey);
           this.candidateRetries.delete(candidateKey);
           this.applied++;
-          this.log('remote ICE candidate accepted', { index: this.candidateCursor, type: candidate.type, family: addressFamily(candidate.address) });
+          if (c?.candidate) this.countCandidateType(this.candidateExchange.appliedTypes, candidate.type);
+          this.log('remote ICE candidate accepted', { index, type: candidate.type, family: addressFamily(candidate.address) });
         } catch (candidateErr) {
           if (signal.aborted) return;
           this.applyFailures++;
-          this.log('remote ICE candidate rejected', { reason: candidateErr.name, index: this.candidateCursor });
+          this.log('remote ICE candidate rejected', { reason: candidateErr.name, index });
           const attempts = (this.candidateRetries.get(candidateKey) || 0) + 1;
           if (candidateErr.name === 'InvalidStateError' && attempts < 3) {
             this.candidateRetries.set(candidateKey, attempts);
-            throw candidateErr;
+            deferred.add(candidateKey);
+            retryError = candidateErr;
+            if (c?.candidate === '') break;
+            continue;
           }
           this.candidateRetries.delete(candidateKey);
           this.rejectedCandidates.add(candidateKey);
-          this.log('remote ICE candidate skipped', { index: this.candidateCursor, reason: candidateErr.name, attempts });
+          this.log('remote ICE candidate skipped', { index, reason: candidateErr.name, attempts });
         }
       }
-      this.candidateCursor++;
+      if (!retryError) this.candidateCursor = index + 1;
     }
+    if (retryError) throw retryError;
   }
 
   /**
@@ -343,10 +372,14 @@ class SlipstreamPeer {
 
     channel.onopen = () => {
       this.channelOpened = true;
+      this.openedAt ??= Date.now();
       this.log('data channel open');
       this.logCandidatePairs();
       this.iceTransport = this.pc?.sctp?.transport?.iceTransport;
-      this.onPairChange = () => this.logCandidatePairs();
+      this.onPairChange = () => {
+        if (this.statsPending) this.pairChangedDuringSample = true;
+        else this.logCandidatePairs();
+      };
       this.iceTransport?.addEventListener?.('selectedcandidatepairchange', this.onPairChange);
       this.onStatusChange(this.disconnectStarted === null ? 'Connected' : 'Reconnecting…');
       // Give both devices a few normal polls to exchange late direct candidates.
@@ -475,6 +508,43 @@ class SlipstreamPeer {
     if (this.events.length > 200) this.events.shift();
   }
 
+  countCandidateType(counts, type) {
+    const key = ['host', 'srflx', 'prflx', 'relay'].includes(type) ? type : 'unknown';
+    counts[key] = (counts[key] || 0) + 1;
+  }
+
+  recordGatheringError(event) {
+    // Browser messages can contain a host, address or credential. Export only categories.
+    const url = String(event.url || '').toLowerCase();
+    const service = /^(turns?|stuns?):/.exec(url)?.[1] || 'unknown';
+    const transport = /[?&]transport=(tcp|udp)(?:&|$)/.exec(url)?.[1] || 'unspecified';
+    const slot = this.rtcConfig.iceServers.findIndex(server =>
+      [server.urls].flat().some(entry => entry.toLowerCase() === url));
+    const code = Number.isInteger(event.errorCode) ? event.errorCode : null;
+    const message = String(event.errorText || '');
+    let category = 'other';
+    if (/dns|resolv|host lookup/i.test(message)) category = 'name-resolution';
+    else if (/timed?\s*out|timeout/i.test(message)) category = 'timeout';
+    else if (code === 401 || code === 438) category = 'authentication';
+    else if (code === 701) category = 'server-unreachable';
+    const serverSlot = slot < 0 ? null : slot + 1;
+    const summary = this.gatheringErrors;
+    summary.total++;
+    const now = new Date().toISOString();
+    const group = summary.groups.find(g => g.code === code && g.service === service &&
+      g.transport === transport && g.serverSlot === serverSlot && g.category === category);
+    if (group) {
+      group.count++;
+      group.lastAt = now;
+    } else if (summary.groups.length < 32) {
+      const details = { code, service, transport, serverSlot, category };
+      summary.groups.push({ ...details, count: 1, firstAt: now, lastAt: now });
+      this.log('ICE gathering error', details);
+    } else {
+      summary.ungrouped++;
+    }
+  }
+
   snapshot() {
     return {
       stage: this.stage, signaling: this.pc?.signalingState, gathering: this.pc?.iceGatheringState,
@@ -482,6 +552,12 @@ class SlipstreamPeer {
       channel: this.dataChannel?.readyState || 'unavailable', channelOpen: this.isChannelOpen(),
       applied: this.applied, applyFailures: this.applyFailures, candidateTypes: this.candidateTypes,
       rejected: this.rejectedCandidates.size, selectedRoute: this.selectedRoute,
+      openedAt: this.openedAt === null ? null : new Date(this.openedAt).toISOString(),
+      timeToOpenMs: this.openedAt === null ? null : this.openedAt - this.started,
+      candidateExchange: this.candidateExchange, gatheringErrors: this.gatheringErrors,
+      reliability: { ...this.reliability, ongoingSince: this.disconnectStarted === null ? null : new Date(this.disconnectStarted).toISOString() },
+      checks: this.checks,
+      lastKnownSelection: this.lastKnownSelection || null,
       durationSeconds: Math.floor((Date.now() - this.started) / 1000),
     };
   }
@@ -490,6 +566,7 @@ class SlipstreamPeer {
     const pc = this.pc;
     if (!pc?.getStats || this.statsPending) return;
     this.statsPending = true;
+    const sampledAt = new Date().toISOString();
     pc.getStats().then(report => {
       if (this.events !== SlipstreamPeer.diagnostics) return;
       const pairs = [];
@@ -522,6 +599,7 @@ class SlipstreamPeer {
         route: relayed ? 'relayed' : kind === 'unknown' ? 'unknown' : 'direct', kind,
         local, remote,
       };
+      if (this.selectedRoute.route !== 'unknown') this.lastKnownSelection = { sampledAt, ...this.selectedRoute };
       report.forEach((row, id) => {
         if (row.type === 'local-candidate' || row.type === 'remote-candidate') {
           candidates.push({ side: row.type, type: row.candidateType, protocol: row.protocol, family: addressFamily(row.address) });
@@ -540,11 +618,21 @@ class SlipstreamPeer {
       for (const side of ['local', 'remote']) {
         this.candidateTypes[side] = [...new Set(candidates.filter(c => c.side === side + '-candidate').map(c => c.type))];
       }
+      this.checks = { sampledAt, selected: pairs.find(pair => pair.selected) || null,
+        observedPairs: pairs.length, failedPairs: pairs.filter(pair => pair.state === 'failed').length };
       this.log('ICE candidate pairs', { selectedRoute: this.selectedRoute, candidates, pairs });
-      if (this.isClosed) SlipstreamPeer.lastSnapshot.selectedRoute = this.selectedRoute;
+      if (this.isClosed) Object.assign(SlipstreamPeer.lastSnapshot, {
+        selectedRoute: this.selectedRoute, checks: this.checks, lastKnownSelection: this.lastKnownSelection || null,
+      });
     }).catch(() => {
       this.log('ICE statistics unavailable');
-    }).finally(() => { this.statsPending = false; });
+    }).finally(() => {
+      this.statsPending = false;
+      if (this.pairChangedDuringSample && !this.isClosed) {
+        this.pairChangedDuringSample = false;
+        this.logCandidatePairs();
+      }
+    });
   }
 
   connectionFailed(error, reason = 'connection-setup-failed') {
