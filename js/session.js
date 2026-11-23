@@ -11,8 +11,8 @@ class SharingSession {
     this.transferEnded = null;
   }
 
-  record(message) {
-    this.activity.push({ time: Date.now(), message });
+  record(message, person) {
+    this.activity.push({ time: Date.now(), message, person });
   }
 
   transfer(id, stage, name, bytes) {

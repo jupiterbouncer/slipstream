@@ -5,14 +5,14 @@
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Slipstream | Nearby Peer-to-Peer File Transfer</title>
-  
+
   <!-- Typography (§9): Space Grotesk & IBM Plex Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="icon" type="image/svg+xml" href="slipstream-favicon.svg">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  
-  <link rel="stylesheet" href="css/style.css?v=sharing3">
+
+  <link rel="stylesheet" href="css/style.css?v=workspace1">
 </head>
 <body>
   <!-- Ambient background pattern -->
@@ -32,7 +32,7 @@
 
       <div class="header-right">
         <!-- Subtle connection status indicator in header -->
-        <div class="header-status" id="header-status">
+        <div class="header-status" id="header-status" role="status">
           <svg class="status-icon-wifi" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <path d="M5 12a11 11 0 0 1 14 0"></path><path d="M8.5 15.5a6.5 6.5 0 0 1 7 0"></path><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"></circle>
           </svg>
@@ -42,6 +42,7 @@
           <span id="header-status-text">Local Network</span>
         </div>
 
+        <button type="button" class="settings-trigger" data-modal="modal-settings" aria-label="Connection settings" title="Connection settings" hidden><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 3-.7 2.4-2.1 1L4 6l-2 3.5 1.8 1.8v2L2 15l2 3.5 2.3-.6 2 1L9 21h5l.7-2.2 2.1-1 2.2.7 2-3.5-1.8-1.8v-2L21 9.5 19 6l-2.2.5-2.1-1L14 3Z"/><circle cx="11.5" cy="12" r="3"/></svg></button>
         <nav class="nav-links">
           <button type="button" class="nav-btn" data-modal="modal-how">How it works</button>
           <button type="button" class="nav-btn" data-modal="modal-privacy">Privacy</button>
@@ -52,14 +53,15 @@
 
     <!-- Main Views (§8) -->
     <main class="main-content">
-      
+
       <!-- 1. Home / Landing Screen -->
       <section id="screen-home" class="screen-view active">
         <div class="hero-heading">
           <h1 class="hero-title">Share files instantly</h1>
           <p class="hero-subtitle">Choose how you'd like to start.</p>
         </div>
-        
+
+        <p id="home-notice" role="status" hidden></p>
         <div class="card-grid">
           <button type="button" class="action-card action-card-primary" id="btn-start-send">
             <div class="card-icon" aria-hidden="true">
@@ -84,11 +86,13 @@
           </button>
         </div>
 
+        <section id="saved-files" class="session-tools" hidden><h2>Files from previous sessions</h2><p>Available until you close or reload this tab.</p><ul class="file-list"></ul></section>
+
         <div class="trust-statement">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
           </svg>
-          <span>Files move directly between browser data channels with DTLS encryption. The server only coordinates pairing.</span>
+          <span>DTLS file encryption · Server-assisted pairing</span>
         </div>
       </section>
 
@@ -99,7 +103,7 @@
             <h2 class="hero-title" style="font-size: 24px;">Pair with receiving device</h2>
             <p class="hero-subtitle" style="font-size: 14px;">Scan this QR code or enter the code on the receiving device.</p>
           </div>
-          
+
           <!-- Pure black-on-white high contrast QR code container (§9) with scan sweep -->
           <div class="qr-container" id="qr-display">
             <div class="qr-scan-line" aria-hidden="true"></div>
@@ -168,11 +172,8 @@
         </div>
       </section>
 
-      <!-- 4. Connected Screen (Both devices) -->
-      <section id="screen-connected" class="screen-view">
-        <div class="connected-card">
-          <!-- Minimal device indicator bar matching reference screens 3 & 4 -->
-          <div class="connected-device-bar">
+      <section id="screen-connected" class="screen-view" aria-label="Connected workspace">
+        <div class="connected-device-bar">
             <div class="device-item device-connected">
               <svg class="device-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="2" y="4" width="16" height="11" rx="1.5"></rect><path d="M7 20h6M10 15v5"></path>
@@ -187,272 +188,272 @@
               <span class="device-name" id="peer-device-label">Peer device</span>
             </div>
           </div>
-
-          <div style="margin-bottom: 1.5rem;">
-            <h2 class="hero-title" style="font-size: 22px; margin-bottom: 4px;">Direct Connection Active</h2>
-            <p class="hero-subtitle" style="font-size: 14px;">End-to-end DTLS peer data channel is open.</p>
-          </div>
-
-          <!-- File Selection Area (Phase 2 Preview & Dropzone) -->
-          <div id="sender-file-section" style="margin-top: 1rem; display: none;">
-            <div class="dropzone" id="file-dropzone" role="button" tabindex="0" aria-label="Choose files to queue">
-              <span class="drop-demo" aria-hidden="true">
-                <span class="demo-surface"></span>
-                <span class="demo-tray"></span>
-                <span class="paper-icon"></span>
-              </span>
-              <p class="dropzone-title">Drop files here</p>
-              <p class="dropzone-subtitle">Or choose files from your device.</p>
-              <span class="btn btn-secondary dropzone-btn" aria-hidden="true">Browse files</span>
-            </div>
-            <input type="file" id="file-input" multiple hidden>
-          </div>
-
-          <!-- Receiver File Section (Phase 2 Incoming-File Preview & Acceptance) -->
-          <div id="receiver-file-section" class="receiver-file-section" style="margin-top: 1rem; display: none;">
-            <!-- 1. Awaiting offer placeholder (Receiver waiting for sender to select a file) -->
-            <div class="receiver-waiting-box" id="receiver-waiting-box">
-              <div class="waiting-indicator">
-                <div class="pulse-dot" aria-hidden="true"></div>
-                <span id="receiver-status-msg">Waiting for sender to select a file...</span>
+        <div class="workspace-layout">
+          <div class="workspace-pages">
+            <section id="view-files" class="workspace-page" role="tabpanel" tabindex="0" aria-labelledby="tab-files">
+              <h1>Files</h1>
+              <div id="sender-file-section" hidden>
+                <button type="button" id="file-dropzone" class="share-drop">
+                  <span class="upload-icon"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h6l2 3h8v10H4Z"/><path d="m9 13 3-3 3 3m-3-3v7"/></svg></span>
+                  <strong>Drop files here</strong>
+                  <span>Up to 100 MiB per file</span>
+                  <span class="btn btn-primary">Choose files</span>
+                </button>
+                <input type="file" id="file-input" multiple hidden>
               </div>
-              <p class="receiver-hint">Files transfer directly between browsers. Nothing is stored until you accept.</p>
-            </div>
-
-            <!-- 2. Incoming File Preview Card (Screen 5) -->
-            <div class="incoming-file-card" id="incoming-file-section" style="display: none;">
-              <div class="incoming-header">
-                <div class="incoming-badge">
-                  <span class="incoming-badge-dot" aria-hidden="true"></span>
-                  <span>Incoming file offer</span>
-                </div>
-                <span class="incoming-hint-text">Review before accepting</span>
-              </div>
-
-              <div class="incoming-preview-content">
-                <div class="file-preview-card incoming-preview-box">
-                  <div class="file-icon-wrapper" aria-hidden="true">
-                    <svg class="file-preview-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                      <path d="M14 2v6h6"></path>
-                      <path d="M12 18v-6m-3 3 3-3 3 3" stroke-width="1.5"></path>
-                    </svg>
+              <div id="receiver-file-section" class="receiver-file-section" style="margin-top: 1rem; display: none;">
+                <!-- 1. Awaiting offer placeholder (Receiver waiting for sender to select a file) -->
+                <div class="receiver-waiting-box" id="receiver-waiting-box">
+                  <div class="waiting-indicator">
+                    <div class="pulse-dot" aria-hidden="true"></div>
+                    <span id="receiver-status-msg">Waiting for sender to select a file...</span>
                   </div>
-                  <div class="file-info">
-                    <p class="file-name" id="incoming-filename" title="Incoming file">document.pdf</p>
-                    <div class="file-meta-row">
-                      <span class="file-size-badge" id="incoming-filesize">0 B</span>
-                      <span class="meta-dot" aria-hidden="true">&bull;</span>
-                      <span class="file-type-text" id="incoming-filemeta">application/octet-stream &bull; from Sender</span>
+                  <p class="receiver-hint">You can request a file or wait for an offer.</p>
+                </div>
+
+                <!-- 2. Incoming File Preview Card (Screen 5) -->
+                <div class="incoming-file-card" id="incoming-file-section" style="display: none;">
+                  <div class="incoming-header">
+                    <div class="incoming-badge">
+                      <span class="incoming-badge-dot" aria-hidden="true"></span>
+                      <span>Incoming file offer</span>
+                    </div>
+                    <span class="incoming-hint-text">Review before accepting</span>
+                  </div>
+
+                  <div class="incoming-preview-content">
+                    <div class="file-preview-card incoming-preview-box">
+                      <div class="file-icon-wrapper" aria-hidden="true">
+                        <svg class="file-preview-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <path d="M14 2v6h6"></path>
+                          <path d="M12 18v-6m-3 3 3-3 3 3" stroke-width="1.5"></path>
+                        </svg>
+                      </div>
+                      <div class="file-info">
+                        <p class="file-name" id="incoming-filename" title="Incoming file">document.pdf</p>
+                        <div class="file-meta-row">
+                          <span class="file-size-badge" id="incoming-filesize">0 B</span>
+                          <span class="meta-dot" aria-hidden="true">&bull;</span>
+                          <span class="file-type-text" id="incoming-filemeta">application/octet-stream &bull; from Sender</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="incoming-security-notice">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                      </svg>
+                      <span>Encrypted transfer · Verified after receipt</span>
                     </div>
                   </div>
+
+                  <!-- Explicit Accept and Decline Buttons -->
+                  <div class="incoming-btn-group">
+                    <button type="button" class="btn btn-secondary" id="btn-decline-transfer">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                      Decline
+                    </button>
+                    <button type="button" class="btn btn-primary" id="btn-accept-transfer">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                      Accept transfer
+                    </button>
+                  </div>
+                  <p class="incoming-note">No file bytes are transferred until you accept.</p>
+                </div>
+              </div>
+              <section id="transfer-progress" class="transfer-card" hidden aria-label="Current transfer">
+                <!-- State Pill Badge (§8, §9) -->
+                <div class="transfer-state-pill" id="transfer-state-pill">
+                  <span class="pill-dot" aria-hidden="true"></span>
+                  <span id="transfer-state-text" role="status">Transferring</span>
                 </div>
 
-                <div class="incoming-security-notice">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                <h2 id="transfer-heading" class="transfer-title">Transferring file...</h2>
+                <p class="hero-subtitle" id="transfer-subtext" style="font-size: 14px;"></p>
+
+                <!-- Active File Summary Badge -->
+                <div class="transfer-file-badge" id="transfer-file-badge" style="display: none;">
+                  <svg class="transfer-file-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <path d="M14 2v6h6"></path>
                   </svg>
-                  <span>Direct WebRTC data channel &bull; SHA-256 pre-hashed & verified</span>
+                  <span class="transfer-file-name" id="transfer-filename">file</span>
+                  <span class="transfer-file-sep" aria-hidden="true">&bull;</span>
+                  <span class="transfer-file-size" id="transfer-filesize">0 B</span>
+                  <span class="transfer-file-stats" id="transfer-speed-eta"></span>
                 </div>
-              </div>
 
-              <!-- Explicit Accept and Decline Buttons -->
-              <div class="incoming-btn-group">
-                <button type="button" class="btn btn-secondary" id="btn-decline-transfer">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                <!-- Success checkmark drawing (Requirement H) -->
+                <div class="success-checkmark-box" id="success-checkmark-box" style="display: none;">
+                  <svg width="52" height="52" viewBox="0 0 48 48" aria-hidden="true">
+                    <circle class="checkmark-circle" cx="24" cy="24" r="21" fill="none" stroke="#2E9E83" stroke-width="2.5"></circle>
+                    <path class="checkmark-check" d="M14 24l7 7 13-13" fill="none" stroke="#2E9E83" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
                   </svg>
-                  Decline
-                </button>
-                <button type="button" class="btn btn-primary" id="btn-accept-transfer">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                  Accept transfer
-                </button>
-              </div>
-              <p class="incoming-note">No file bytes are transferred until you accept.</p>
-            </div>
-          </div>
+                </div>
 
-          <!-- Phase 1 Data Channel Proof & Verification Test Box -->
-          <section id="verified-files" class="session-tools" hidden>
-            <h3>Verified files</h3><ul class="file-list"></ul>
-          </section>
-          <div id="session-tools" class="session-tools" hidden>
-            <section aria-label="File requests">
-              <button id="request-file" class="btn btn-secondary" hidden>Request file</button>
-              <div id="request-choice" hidden>
-                <p>Your peer is requesting a file.</p>
-                <button id="approve-request" class="btn btn-primary">Choose a file to offer</button>
-                <button id="decline-request" class="btn btn-secondary">Decline request</button>
+                <!-- Error / Failure cross icon drawing (Broken / Failure state) -->
+                <div class="error-cross-box" id="error-cross-box" style="display: none;">
+                  <svg width="52" height="52" viewBox="0 0 48 48" aria-hidden="true">
+                    <circle class="error-circle" cx="24" cy="24" r="21" fill="none" stroke="#E53935" stroke-width="2.5"></circle>
+                    <path class="error-cross" d="M16 16l16 16m0-16L16 32" fill="none" stroke="#E53935" stroke-width="3" stroke-linecap="round"></path>
+                  </svg>
+                </div>
+
+                <!-- Signature device-to-device trail with Coral mascot & highlight streak (Requirement A) -->
+                <div class="device-trail-container" id="device-trail-container">
+                  <div class="device-node">
+                    <div class="device-glyph active" id="transfer-node-sender">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2" y="4" width="16" height="11" rx="1.5"></rect><path d="M7 20h6M10 15v5"></path>
+                      </svg>
+                    </div>
+                    <span class="device-label" id="transfer-label-sender">Sender</span>
+                  </div>
+
+                  <div class="trail-track" id="transfer-trail-track">
+                    <div class="trail-fill" id="transfer-trail-fill">
+                      <span class="trail-blocks" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <!-- Small Coral geometric marker traveling along trail (Requirement A) -->
+                      <div class="coral-marker" id="coral-marker" title="Coral marker">
+                        <div class="coral-marker-core"></div>
+                      </div>
+                    </div>
+                    <span class="trail-percentage" id="transfer-percentage-text">0%</span>
+                  </div>
+
+                  <div class="device-node">
+                    <div class="device-glyph" id="transfer-node-receiver">
+                      <span class="file-pieces verified-file" aria-hidden="true">
+                        <span class="paper-icon"></span><i></i><i></i><i></i>
+                      </span>
+                      <svg width="20" height="24" viewBox="0 0 18 26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="1" y="1" width="16" height="24" rx="3"></rect>
+                      </svg>
+                    </div>
+                    <span class="device-label" id="transfer-label-receiver">Receiver</span>
+                  </div>
+                </div>
+
+                <!-- Transfer Controls / Actions for all states -->
+                <div id="transfer-controls" class="transfer-controls">
+                  <!-- Active / in-progress cancellation button -->
+                  <button type="button" class="btn btn-secondary" id="btn-cancel-transfer">Cancel transfer</button>
+
+                  <!-- Completion / Success sender action -->
+                  <button type="button" class="btn btn-primary" id="btn-send-another" style="display: none;">Send another file</button>
+
+                  <!-- Rejection / Failure / Cancel retry action -->
+                  <button type="button" class="btn btn-secondary" id="btn-retry-transfer" style="display: none;">Try again</button>
+
+                  <!-- Return home / Done action -->
+                  <button type="button" class="btn btn-ghost" id="btn-return-home" style="display: none;">Return home</button>
+                </div>
+              </section>
+              <section id="verified-files" class="session-tools" hidden>
+                <h3>Verified files</h3><ul class="file-list"></ul>
+              </section>
+              <div id="session-tools" class="session-tools" hidden>
+                <section aria-label="File requests">
+                  <button id="request-file" class="btn btn-secondary" hidden>Request file</button>
+                  <div id="request-choice" hidden>
+                    <p><span data-person="peer"></span> requested a file.</p>
+                    <button id="approve-request" class="btn btn-primary">Choose a file to offer</button>
+                    <button id="decline-request" class="btn btn-secondary">Decline request</button>
+                  </div>
+                  <input type="file" id="request-picker" hidden>
+                  <p id="request-status" role="status"></p>
+                </section>
+                <section id="queue-panel" hidden>
+                  <h3>Pending files</h3>
+                  <ol id="queue-list" class="file-list"></ol>
+                  <div class="session-actions">
+                    <button id="btn-send-file" class="btn btn-primary">Send queue</button>
+                    <button id="clear-queue" class="btn btn-secondary">Clear pending</button>
+                  </div>
+                </section>
+                <p id="queue-feedback" role="status"></p>
               </div>
-              <input type="file" id="request-picker" hidden>
-              <p id="request-status" role="status"></p>
             </section>
-            <section id="queue-panel" hidden>
-              <h3>Pending files</h3>
-              <ol id="queue-list" class="file-list"></ol>
-              <div class="session-actions">
-                <button id="btn-send-file" class="btn btn-primary">Send queue</button>
-                <button id="clear-queue" class="btn btn-secondary">Clear pending</button>
+            <section id="view-messages" class="workspace-page" role="tabpanel" tabindex="0" aria-labelledby="tab-messages" hidden>
+              <h1>Messages</h1>
+              <div class="conversation">
+                <p id="chat-empty">Start a conversation with <span data-person="peer"></span>.</p>
+                <div id="received-text" role="log" aria-label="Conversation"></div>
+                <form id="share-panel">
+                  <label class="sr-only" for="share-text">Message to your peer</label>
+                  <textarea id="share-text" rows="2" maxlength="8192" placeholder="Write a message or paste a link…"></textarea>
+                  <div class="composer-actions"><button type="button" class="btn btn-ghost" id="paste-text">Paste</button>
+                    <button type="submit" class="btn btn-primary" id="send-text">Send <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m7 17 10-10m-8 0h8v8"/></svg></button></div>
+                  <p id="share-feedback" role="status"></p>
+                </form>
               </div>
-              <p id="queue-feedback" role="status"></p>
             </section>
-            <details id="share-panel">
-              <summary>Share text or a link</summary>
-              <label for="share-text">Text, link or code (8 KiB max)</label>
-              <textarea id="share-text" rows="3" maxlength="8192"></textarea>
-              <div class="session-actions">
-                <button class="btn btn-secondary" id="paste-text">Paste</button>
-                <button class="btn btn-primary" id="send-text">Send text</button>
-              </div>
-              <p id="share-feedback" role="status"></p>
-              <div id="received-text"></div>
-            </details>
-            <details id="activity-panel">
-              <summary>Session activity &amp; statistics</summary>
+            <section id="view-activity" class="workspace-page" role="tabpanel" tabindex="0" aria-labelledby="tab-activity" hidden>
+              <h1>Activity</h1>
               <p id="session-stats"></p>
-              <ol id="activity-list" aria-label="Session activity"></ol>
-              <button class="btn btn-secondary" id="clear-activity">Clear activity</button>
-            </details>
-            <details id="nickname-connection">
-              <summary>Connection</summary>
-              <label for="nickname">Your device name</label>
-              <div class="session-actions"><input id="nickname" maxlength="32" autocomplete="off">
-                <button id="save-name" class="btn btn-secondary">Save name</button>
-              </div>
-              <p id="name-feedback" role="status"></p>
-              <button class="btn btn-secondary" data-modal="modal-help">Connection diagnostics</button>
-              <button id="end-session" class="btn btn-ghost">End session</button>
-            </details>
+              <ol id="activity-list" aria-label="Session timeline"></ol>
+              <button class="btn btn-ghost" id="clear-activity">Clear activity</button>
+            </section>
           </div>
-          <div class="phase-test-box" id="phase-chat" hidden>
-            <h4>Phase 1 Data Channel Verification</h4>
-            <p style="font-size: 0.8rem; color: var(--color-steel); margin-bottom: 0.5rem;">
-              Send an instant text message directly through the WebRTC data channel to verify zero-server peer transmission:
-            </p>
-            <div class="chat-log" id="test-chat-log" role="log" aria-label="Peer chat">Data channel ready.</div>
-            <div style="display: flex; gap: 0.5rem;">
-              <input type="text" id="test-message-input" aria-label="Chat message" disabled placeholder="Type a message..." style="flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-mist); border-radius: var(--radius-sm); font-size: 0.85rem; outline: none;">
-              <button type="button" class="btn btn-secondary" id="btn-send-test-msg" disabled style="padding: 0.5rem 1rem; font-size: 0.85rem;">Send</button>
-            </div>
-          </div>
-
-          <div style="margin-top: 1.5rem;">
-            <button type="button" class="btn btn-ghost" id="btn-disconnect">Disconnect</button>
-          </div>
+          <nav class="workspace-rail" role="tablist" aria-label="Workspace pages" aria-orientation="vertical">
+              <button type="button" id="tab-files" role="tab" aria-selected="true" aria-controls="view-files" tabindex="0" title="Files" aria-label="Files">
+                <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 9h18"/></svg>
+                <svg class="tab-ring" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" pathLength="100"/></svg>
+              </button>
+              <button type="button" id="tab-messages" role="tab" aria-selected="false" aria-controls="view-messages" tabindex="-1" title="Messages" aria-label="Messages">
+                <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.6 8.6 0 0 1-9 8.5 10 10 0 0 1-4-.9L3 21l1.4-4.8A8.5 8.5 0 1 1 21 11.5Z"/><path d="M8 10h8m-8 4h5"/></svg>
+                <svg class="tab-ring" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" pathLength="100"/></svg>
+              </button>
+              <button type="button" id="tab-activity" role="tab" aria-selected="false" aria-controls="view-activity" tabindex="-1" title="Activity" aria-label="Activity">
+                <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg>
+                <svg class="tab-ring" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" pathLength="100"/></svg>
+              </button>
+          </nav>
         </div>
+        <footer class="security-strip"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 3v6c0 5-3.5 8.4-8 11-4.5-2.6-8-6-8-11V5Z"/><path d="m8.5 11.5 2.5 2.5 4.5-5"/></svg><p id="security-copy">DTLS encrypted · Server pairs devices</p></footer>
       </section>
-
-      <!-- 5. Transferring / Done / Error Screen -->
-      <section id="screen-transfer" class="screen-view">
-        <div class="connected-card transfer-card">
-          <!-- State Pill Badge (§8, §9) -->
-          <div class="transfer-state-pill" id="transfer-state-pill">
-            <span class="pill-dot" aria-hidden="true"></span>
-            <span id="transfer-state-text" role="status">Transferring</span>
-          </div>
-
-          <h2 id="transfer-heading" class="hero-title" style="font-size: 24px;">Transferring file...</h2>
-          <p class="hero-subtitle" id="transfer-subtext" style="font-size: 14px;">Streaming direct 16 KB chunks over WebRTC data channel.</p>
-
-          <!-- Active File Summary Badge -->
-          <div class="transfer-file-badge" id="transfer-file-badge" style="display: none;">
-            <svg class="transfer-file-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <path d="M14 2v6h6"></path>
-            </svg>
-            <span class="transfer-file-name" id="transfer-filename">file</span>
-            <span class="transfer-file-sep" aria-hidden="true">&bull;</span>
-            <span class="transfer-file-size" id="transfer-filesize">0 B</span>
-            <span class="transfer-file-stats" id="transfer-speed-eta"></span>
-          </div>
-
-          <!-- Success checkmark drawing (Requirement H) -->
-          <div class="success-checkmark-box" id="success-checkmark-box" style="display: none;">
-            <svg width="52" height="52" viewBox="0 0 48 48" aria-hidden="true">
-              <circle class="checkmark-circle" cx="24" cy="24" r="21" fill="none" stroke="#2E9E83" stroke-width="2.5"></circle>
-              <path class="checkmark-check" d="M14 24l7 7 13-13" fill="none" stroke="#2E9E83" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-          </div>
-
-          <!-- Error / Failure cross icon drawing (Broken / Failure state) -->
-          <div class="error-cross-box" id="error-cross-box" style="display: none;">
-            <svg width="52" height="52" viewBox="0 0 48 48" aria-hidden="true">
-              <circle class="error-circle" cx="24" cy="24" r="21" fill="none" stroke="#E53935" stroke-width="2.5"></circle>
-              <path class="error-cross" d="M16 16l16 16m0-16L16 32" fill="none" stroke="#E53935" stroke-width="3" stroke-linecap="round"></path>
-            </svg>
-          </div>
-
-          <!-- Signature device-to-device trail with Coral mascot & highlight streak (Requirement A) -->
-          <div class="device-trail-container" id="device-trail-container">
-            <div class="device-node">
-              <div class="device-glyph active" id="transfer-node-sender">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="2" y="4" width="16" height="11" rx="1.5"></rect><path d="M7 20h6M10 15v5"></path>
-                </svg>
-              </div>
-              <span class="device-label" id="transfer-label-sender">Sender</span>
-            </div>
-
-            <div class="trail-track" id="transfer-trail-track">
-              <div class="trail-fill" id="transfer-trail-fill">
-                <span class="trail-blocks" aria-hidden="true"><i></i><i></i><i></i></span>
-                <!-- Small Coral geometric marker traveling along trail (Requirement A) -->
-                <div class="coral-marker" id="coral-marker" title="Coral marker">
-                  <div class="coral-marker-core"></div>
-                </div>
-              </div>
-              <span class="trail-percentage" id="transfer-percentage-text">0%</span>
-            </div>
-
-            <div class="device-node">
-              <div class="device-glyph" id="transfer-node-receiver">
-                <span class="file-pieces verified-file" aria-hidden="true">
-                  <span class="paper-icon"></span><i></i><i></i><i></i>
-                </span>
-                <svg width="20" height="24" viewBox="0 0 18 26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="1" y="1" width="16" height="24" rx="3"></rect>
-                </svg>
-              </div>
-              <span class="device-label" id="transfer-label-receiver">Receiver</span>
-            </div>
-          </div>
-
-          <!-- Transfer Controls / Actions for all states -->
-          <div id="transfer-controls" class="transfer-controls">
-            <!-- Active / in-progress cancellation button -->
-            <button type="button" class="btn btn-secondary" id="btn-cancel-transfer">Cancel transfer</button>
-            
-            <!-- Completion / Success sender action -->
-            <button type="button" class="btn btn-primary" id="btn-send-another" style="display: none;">Send another file</button>
-            
-            <!-- Rejection / Failure / Cancel retry action -->
-            <button type="button" class="btn btn-secondary" id="btn-retry-transfer" style="display: none;">Try again</button>
-            
-            <!-- Return home / Done action -->
-            <button type="button" class="btn btn-ghost" id="btn-return-home" style="display: none;">Return home</button>
-          </div>
-        </div>
+      <section id="screen-failed" class="screen-view"><h2>Connection failed</h2><p>Check your connection and pair again.</p>
+        <button class="btn btn-primary" id="retry-pairing">Try again</button>
+        <button class="btn btn-ghost" id="leave-pairing">Back to home</button>
       </section>
-
     </main>
 
     <!-- Modals (§8) -->
+    <dialog class="modal-overlay" id="modal-settings" aria-labelledby="settings-title"><div class="modal-card">
+      <button type="button" class="modal-close" data-close-modal aria-label="Close settings">&times;</button>
+      <h2 id="settings-title">Connection settings</h2>
+      <form id="nickname-form"><label for="nickname">Your device name</label>
+        <div class="name-editor"><input id="nickname" maxlength="32" autocomplete="off" required><button id="save-name" class="btn btn-secondary">Save name</button></div>
+        <p id="name-feedback" role="status"></p>
+      </form>
+      <div class="settings-actions"><button class="btn btn-secondary" data-modal="modal-help">Connection diagnostics</button>
+      <button id="end-session" class="btn btn-ghost">End session</button></div>
+    </div></dialog>
+    <dialog class="modal-overlay" id="scanner-dialog" aria-labelledby="scanner-title"><div class="modal-card">
+      <button type="button" class="modal-close" data-close-modal aria-label="Close scanner">&times;</button>
+      <h2 id="scanner-title">Scan a pairing code</h2>
+      <div class="camera-frame"><video id="scanner-video" autoplay muted playsinline></video><span aria-hidden="true"></span></div>
+      <p id="scanner-status" role="status"></p>
+      <button type="button" class="btn btn-secondary" id="scanner-manual">Enter code manually</button>
+    </div></dialog>
     <!-- How it works modal -->
     <dialog class="modal-overlay" id="modal-how" aria-labelledby="modal-how-title">
       <div class="modal-card">
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-how-title">How Slipstream works</h2>
         <div class="modal-content" style="margin-top: 1rem;">
-          <p>Slipstream is engineered for direct peer-to-peer file transfer between devices on the same local network without cloud storage:</p>
+          <p>Slipstream connects browsers for encrypted file sharing, with an optional relay for restrictive networks.</p>
           <ul>
             <li><strong>Session Creation:</strong> The sender generates a temporary 6-character code and QR code.</li>
             <li><strong>Signaling Only:</strong> The lightweight PHP/MySQL backend coordinates WebRTC connection metadata (SDP offer/answer and ICE candidates).</li>
-            <li><strong>Direct Data Channel:</strong> Once connected, browsers communicate directly over an <code>RTCDataChannel</code> with DTLS encryption.</li>
-            <li><strong>Zero Server Storage:</strong> Your file bytes never touch the server or any third-party cloud.</li>
+            <li>Browsers exchange files over an <code>RTCDataChannel</code> with DTLS encryption.</li>
+            <li>When a TURN relay is configured and selected, encrypted file data travels through the third-party relay and uses internet bandwidth.</li>
           </ul>
         </div>
       </div>
@@ -470,6 +471,7 @@
             <li><strong>Ephemeral Data:</strong> Pairing records expire automatically after 10 minutes and are completely purged from the server.</li>
             <li><strong>Brute-Force Protection:</strong> Pairing lookups are rate-limited using one-way cryptographic hashes.</li>
             <li><strong>In-Transit DTLS Encryption:</strong> WebRTC data channels enforce end-to-end DTLS encryption between the two peer browsers.</li>
+            <li>An optional TURN provider forwards encrypted traffic and can observe connection metadata and traffic volume. Connection diagnostics show the selected route when the browser exposes it.</li>
           </ul>
         </div>
       </div>
@@ -484,9 +486,9 @@
           <h3>Why is my file still waiting?</h3>
           <p>Each file needs a separate acceptance. The next offer follows verification, rejection or cancellation. After a failure, review the pending queue and select Send queue to retry the remaining files.</p>
           <h3>Where are my downloads?</h3>
-          <p>Open Verified files to preview or download a completed file. Save anything you need before ending the session.</p>
+          <p>Open Verified files to preview or download a completed file. Completed files stay available on the home screen until you remove them or close or reload the tab.</p>
           <h3>Why can’t I paste or connect?</h3>
-          <p>If clipboard permission is denied, paste into Share text manually. Pairing requires both browsers to stay open.</p>
+          <p>If clipboard permission is denied, paste into the message composer manually. Pairing requires both browsers to stay open.</p>
           <ul>
             <li>Ensure both devices are connected to the same Wi-Fi or local network.</li>
             <li>Check that your firewall or router allows local UDP traffic.</li>
@@ -518,19 +520,22 @@
   <div class="ui-toast" id="ui-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Scripts: Vendor QR, API client, WebRTC manager, Phase 2 engines, App logic (§7.4) -->
-  <script src="js/vendor/qrcode.min.js"></script>
-  <script src="js/api.js?v=sharing3"></script>
+  <script src="js/vendor/qrcode.min.js?v=1.0.0"></script>
+  <script src="js/api.js?v=stability2"></script>
   <script src="js/application-messages.js"></script>
-  <script src="js/session.js"></script>
-  <script src="js/webrtc.js?v=sharing3"></script>
+  <script src="js/session.js?v=workspace1"></script>
+  <script src="js/turn-config.js?v=connectivity1"></script>
+  <script src="js/turn.js?v=connectivity1"></script>
+  <script src="js/webrtc.js?v=phase4"></script>
   <script src="js/transfer-protocol.js"></script>
   <script src="js/file-sender.js"></script>
   <script src="js/file-receiver.js"></script>
   <script src="js/file-requests.js"></script>
   <script src="js/file-queue.js"></script>
   <script src="js/file-viewer.js"></script>
-  <script src="js/share-text.js"></script>
-  <script src="js/app.js?v=sharing3"></script>
-  <script src="js/ui-motion.js?v=sharing3"></script>
+  <script src="js/share-text.js?v=workspace1"></script>
+  <script src="js/scanner.js"></script>
+  <script src="js/app.js?v=phase4"></script>
+  <script src="js/ui-motion.js?v=workspace1"></script>
 </body>
 </html>
