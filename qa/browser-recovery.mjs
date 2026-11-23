@@ -246,6 +246,21 @@ try {
   const bytes = await waitFor('download', () => readFile(path.join(downloadPath, name)).catch(() => null));
   assert.deepEqual(bytes, original);
   console.log(origin, bytes.length, 'bytes verified and downloaded. SHA-256', createHash('sha256').update(bytes).digest('hex'));
+  if (process.argv.includes('--soak')) {
+    const route = () => receiver.evaluate(`(async () => {
+      const stats = await testPeer.getStats();
+      const transport = [...stats.values()].find(s => s.selectedCandidatePairId);
+      const pair = stats.get(transport?.selectedCandidatePairId);
+      return { local: stats.get(pair?.localCandidateId)?.candidateType, remote: stats.get(pair?.remoteCandidateId)?.candidateType,
+        state: pair?.state, interruptions: SlipstreamPeer.diagnostics.filter(e => e.event === 'connection recovery started').length };
+    })()`);
+    console.log('Local Chrome before idle', await route());
+    const since = Date.now();
+    await pause(300000);
+    const after = await route();
+    assert.equal(after.state, 'succeeded');
+    console.log('Local Chrome after', Math.round((Date.now() - since) / 1000), 'idle seconds', after);
+  }
   await checkSharing({ sender, receiver, temp, waitFor });
   await sender.click('#btn-send-another');
   await sender.selectFiles('#file-input', [fixture]);
@@ -264,6 +279,9 @@ try {
   const reportBytes = await waitFor('connection report download', () =>
     readFile(path.join(downloadPath, 'slipstream-connection.json')).catch(() => null));
   const report = JSON.parse(reportBytes);
+  assert.equal(report.build, 'phase4');
+  assert.ok(report.snapshot.openedAt && report.snapshot.reason);
+  assert.ok(report.snapshot.candidateExchange.receivedRows >= report.snapshot.applied);
   assert.equal(report.snapshot.channelOpen, false);
   // A local channel can open before the next polling pass applies any remote candidates.
   const actual = await sender.evaluate('window.appliedCandidates');
