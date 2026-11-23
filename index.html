@@ -189,7 +189,7 @@
           </div>
 
           <div style="margin-bottom: 1.5rem;">
-            <h2 class="hero-title" style="font-size: 22px; margin-bottom: 4px;">Direct Connection Active</h2>
+            <h2 class="hero-title" style="font-size: 22px; margin-bottom: 4px;">Secure Connection Active</h2>
             <p class="hero-subtitle" style="font-size: 14px;">End-to-end DTLS peer data channel is open.</p>
           </div>
 
@@ -252,7 +252,7 @@
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                   </svg>
-                  <span>Direct WebRTC data channel &bull; SHA-256 pre-hashed & verified</span>
+                  <span>Encrypted WebRTC data channel &bull; SHA-256 pre-hashed & verified</span>
                 </div>
               </div>
 
@@ -447,12 +447,12 @@
         <button type="button" class="modal-close" data-close-modal aria-label="Close dialog">&times;</button>
         <h2 id="modal-how-title">How Slipstream works</h2>
         <div class="modal-content" style="margin-top: 1rem;">
-          <p>Slipstream is engineered for direct peer-to-peer file transfer between devices on the same local network without cloud storage:</p>
+          <p>Slipstream connects browsers for encrypted file sharing, with an optional relay for restrictive networks.</p>
           <ul>
             <li><strong>Session Creation:</strong> The sender generates a temporary 6-character code and QR code.</li>
             <li><strong>Signaling Only:</strong> The lightweight PHP/MySQL backend coordinates WebRTC connection metadata (SDP offer/answer and ICE candidates).</li>
-            <li><strong>Direct Data Channel:</strong> Once connected, browsers communicate directly over an <code>RTCDataChannel</code> with DTLS encryption.</li>
-            <li><strong>Zero Server Storage:</strong> Your file bytes never touch the server or any third-party cloud.</li>
+            <li>Browsers exchange files over an <code>RTCDataChannel</code> with DTLS encryption.</li>
+            <li>When a TURN relay is configured and selected, encrypted file data travels through the third-party relay and uses internet bandwidth.</li>
           </ul>
         </div>
       </div>
@@ -470,6 +470,7 @@
             <li><strong>Ephemeral Data:</strong> Pairing records expire automatically after 10 minutes and are completely purged from the server.</li>
             <li><strong>Brute-Force Protection:</strong> Pairing lookups are rate-limited using one-way cryptographic hashes.</li>
             <li><strong>In-Transit DTLS Encryption:</strong> WebRTC data channels enforce end-to-end DTLS encryption between the two peer browsers.</li>
+            <li>An optional TURN provider forwards encrypted traffic and can observe connection metadata and traffic volume. Connection diagnostics show the selected route when the browser exposes it.</li>
           </ul>
         </div>
       </div>
@@ -522,7 +523,9 @@
   <script src="js/api.js?v=sharing3"></script>
   <script src="js/application-messages.js"></script>
   <script src="js/session.js"></script>
-  <script src="js/webrtc.js?v=sharing3"></script>
+  <script src="js/turn-config.js?v=connectivity1"></script>
+  <script src="js/turn.js?v=connectivity1"></script>
+  <script src="js/webrtc.js?v=connectivity1"></script>
   <script src="js/transfer-protocol.js"></script>
   <script src="js/file-sender.js"></script>
   <script src="js/file-receiver.js"></script>
@@ -530,7 +533,7 @@
   <script src="js/file-queue.js"></script>
   <script src="js/file-viewer.js"></script>
   <script src="js/share-text.js"></script>
-  <script src="js/app.js?v=sharing3"></script>
+  <script src="js/app.js?v=connectivity1"></script>
   <script src="js/ui-motion.js?v=sharing3"></script>
 </body>
 </html>

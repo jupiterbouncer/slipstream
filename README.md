@@ -2,7 +2,7 @@
 
 **Nearby file transfer. Direct device to device. No cloud upload. No account.**
 
-Slipstream is a browser-based file-transfer project designed to send a file directly between two nearby devices on the same local network. One device creates a temporary pairing code and QR code; the other joins using either method. The browsers establish a WebRTC peer-to-peer connection and transfer the file directly through a data channel.
+Slipstream is a browser-based file-transfer project designed for nearby devices. One device creates a temporary pairing code and QR code, and the other joins using either method. The browsers transfer files through an encrypted WebRTC data channel. Optional TURN configuration supports restrictive networks by forwarding encrypted traffic through a third-party relay.
 
 The PHP/MySQL server is used only for temporary signaling. It coordinates the connection but does **not** receive or store file bytes.
 
@@ -31,7 +31,7 @@ The PHP/MySQL server is used only for temporary signaling. It coordinates the co
 2. Slipstream displays a short pairing code and a QR code containing a join link.
 3. The receiver scans the QR code or enters the code manually.
 4. The browsers exchange WebRTC signaling information through a PHP REST API. MySQL temporarily stores the pairing session, SDP offer/answer and ICE candidates.
-5. The browsers establish a direct WebRTC `RTCDataChannel` connection.
+5. The browsers establish an encrypted WebRTC `RTCDataChannel` connection. Optional TURN configuration adds a relay path for restrictive networks.
 6. The sender selects a file and previews its details. The receiver sees the incoming-file details and accepts or declines.
 7. After acceptance, the sender sends the file in ordered chunks. The receiver rebuilds the file and verifies its SHA-256 digest before offering it for download.
 8. The transfer ends with a clear success, cancellation or error state. Temporary signaling records are deleted or expire.
@@ -292,7 +292,7 @@ Run `node --test qa/*.test.cjs` with Node 22 or later. For the two-browser integ
 ## Limitations
 
 - The initial target is devices on the same local network. Direct WebRTC connectivity can still be affected by browser, firewall and network configuration.
-- There is no TURN relay or server-side file-transfer fallback.
+- Optional Metered/Open Relay configuration adds encrypted relay candidates. See [TURN setup and physical-device acceptance](TURN_SETUP.md) for the credential location, free quota, third-party traffic disclosure and test matrix.
 - Pairing uses an explicit QR code or short code; there is no automatic nearby-device discovery.
 - The server temporarily handles signaling metadata, but it does not handle file bytes.
 - Received files and queued selections use browser memory. Save and remove verified files to reclaim memory during a long session.

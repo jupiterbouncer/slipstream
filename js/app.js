@@ -237,6 +237,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const fields = {
       'Pairing stage': snapshot.stage, Signaling: snapshot.signaling, 'ICE gathering': snapshot.gathering,
       ICE: snapshot.ice, Peer: snapshot.connection, 'Data channel': snapshot.channel,
+      'Selected route (last observed)': snapshot.selectedRoute?.route,
+      'Selected local / remote types': [snapshot.selectedRoute?.local, snapshot.selectedRoute?.remote].filter(Boolean).join(' / '),
       'Local candidate types': snapshot.candidateTypes.local.join(', '),
       'Remote candidate types': snapshot.candidateTypes.remote.join(', '),
       'Candidate applications (successful / failed)': snapshot.applied + ' / ' + snapshot.applyFailures,
@@ -258,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
       status.textContent = 'Start a pairing attempt first, then download its report here.';
       return;
     }
-    const blob = new Blob([JSON.stringify({ build: 'sharing-experience', snapshot, entries }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ build: 'connectivity1', snapshot, entries }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -768,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
           initializeTransferEngines();
 
           showScreen('connected');
-          appendChatLog('System', 'Direct WebRTC data channel connected!');
+          appendChatLog('System', 'Encrypted WebRTC data channel connected!');
         },
         onApplicationMessage: receiveApplicationMessage,
         onControlMessage: (message) => {
@@ -851,7 +853,7 @@ document.addEventListener('DOMContentLoaded', () => {
           initializeTransferEngines();
 
           showScreen('connected');
-          appendChatLog('System', 'Direct WebRTC data channel connected!');
+          appendChatLog('System', 'Encrypted WebRTC data channel connected!');
         },
         onApplicationMessage: receiveApplicationMessage,
         onControlMessage: (message) => {
