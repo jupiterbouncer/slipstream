@@ -8,11 +8,16 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
   const fill = (tab, id, value) => tab.evaluate(
     'document.getElementById(' + JSON.stringify(id) + ').value = ' + JSON.stringify(value));
 
-  await sender.click('#nickname-connection summary');
+  await sender.click('.settings-trigger');
   await fill(sender, 'nickname', 'Study laptop');
   await sender.click('#save-name');
   await wait(receiver, 'peer nickname', "document.querySelector('#peer-device-label').textContent === 'Study laptop'");
-  await sender.click('#share-panel summary');
+  await sender.click('#modal-settings [data-close-modal]');
+  await sender.click('#tab-messages');
+  await receiver.click('#tab-messages');
+  assert.ok(await receiver.evaluate("Array.from(document.querySelectorAll('.bubble.peer strong')).every(e => e.textContent === 'Study laptop')"));
+  await wait(receiver, 'persistent coral ring', "getComputedStyle(document.querySelector('#tab-messages circle')).strokeDashoffset === '0px'");
+
   await sender.evaluate(`Object.defineProperty(navigator.clipboard, 'readText', {
     configurable: true, value: async () => { throw new DOMException('Denied', 'NotAllowedError'); }
   })`);
@@ -22,12 +27,14 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
   const snippet = '<b>literal text</b>\n  second line';
   await fill(sender, 'share-text', snippet);
   await sender.click('#send-text');
-  await wait(receiver, 'literal text delivery', "document.querySelector('#received-text pre')?.textContent === " + JSON.stringify(snippet));
+  await wait(receiver, 'literal text delivery', "document.querySelector('#received-text article:last-child pre')?.textContent === " + JSON.stringify(snippet));
   assert.ok(await receiver.evaluate("!document.querySelector('#received-text b')"));
   await fill(sender, 'share-text', 'https://example.org/notes');
   await sender.click('#send-text');
   await wait(receiver, 'explicit safe link', "document.querySelector('#received-text a')?.href === 'https://example.org/notes'");
 
+  await sender.click('#tab-files');
+  await receiver.click('#tab-files');
   await receiver.click('#request-file');
   await sender.click('#decline-request');
   await wait(receiver, 'request declined', "document.querySelector('#request-status').textContent.includes('declined')");
@@ -59,11 +66,20 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
   await wait(sender, 'preview URL revoked', 'fetch(' + JSON.stringify(url) + ').then(() => false, () => true)');
 
   for (const tab of [sender, receiver]) {
-    await tab.evaluate("for (const panel of document.querySelectorAll('#session-tools details')) panel.open = true");
+
     for (const width of [320, 360, 375, 390, 430, 768, 1280]) {
       await tab.command('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: width < 600 });
-      const overflow = await tab.evaluate('document.documentElement.scrollWidth > document.documentElement.clientWidth');
-      assert.equal(overflow, false, 'Sharing controls overflow at ' + width);
+      for (const name of ['messages', 'activity', 'files']) {
+        await tab.click('#tab-' + name);
+        const layout = await tab.evaluate(`(() => {
+          const page = document.querySelector('#view-' + ${JSON.stringify(name)}).getBoundingClientRect();
+          const nav = document.querySelector('#tab-files').getBoundingClientRect();
+          return { button: nav.width, railRight: nav.right, viewport: innerWidth, gap: nav.left - page.right,
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+        })()`);
+        assert.ok(layout.button >= 44 && layout.railRight <= layout.viewport && layout.gap >= 0 && !layout.overflow,
+          name + ' at ' + width + ': ' + JSON.stringify(layout));
+      }
     }
   }
   await sender.click('#btn-send-file');
@@ -80,15 +96,19 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
   await wait(receiver, 'second queue offer', "document.querySelector('#incoming-filename').textContent === 'picture.gif'");
   await receiver.click('#btn-accept-transfer');
   await wait(sender, 'verified totals', "document.querySelector('#session-stats').textContent.includes('3 verified files')");
+  await sender.click('#tab-activity');
   await sender.click('#clear-activity');
   assert.equal(await sender.evaluate("document.querySelector('#activity-list').children.length"), 0);
   assert.ok(await sender.evaluate("document.querySelector('#session-stats').textContent.includes('3 verified files')"));
   await sender.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   assert.ok(await sender.evaluate("parseFloat(getComputedStyle(document.querySelector('#transfer-trail-fill')).transitionDuration) < 0.001"));
-  const help = 'button[data-modal="modal-help"]';
+  await sender.click('.settings-trigger');
+  const help = '#modal-settings [data-modal="modal-help"]';
   await sender.click(help);
   assert.ok(await sender.evaluate("document.activeElement.closest('#modal-help') !== null"));
   for (const type of ['keyDown', 'keyUp']) await sender.command('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await wait(sender, 'Escape restores focus', "document.activeElement.dataset.modal === 'modal-help' && !document.querySelector('#modal-help').open");
+  await sender.click('#modal-settings [data-close-modal]');
+  await sender.click('#tab-files');
   console.log('Phase 3 sharing, per-file consent, preview cleanup, dialog focus and seven responsive widths passed.');
 }
