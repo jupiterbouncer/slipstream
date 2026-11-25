@@ -9,6 +9,7 @@ const SIGNALING_POLL_MS = 2500;
 // Allow one consent-expiry interval for a path to recover. Native failures end it sooner.
 const DISCONNECT_RECOVERY_MS = 30000;
 const POST_OPEN_TRICKLE_MS = 4 * SIGNALING_POLL_MS;
+const MAX_POST_OPEN_MS = 30000;
 
 function transientSignalingError(error) {
   return error instanceof TypeError || error.name === 'InvalidStateError' || error.status === 408 || error.status >= 500;
@@ -44,7 +45,7 @@ class SlipstreamPeer {
     this.applied = 0;
     this.applyFailures = 0;
     this.candidateExchange = { postAttempts: 0, acknowledged: 0, receivedRows: 0,
-      gatheredTypes: {}, appliedTypes: {} };
+      gatheredTypes: {}, appliedTypes: {}, gatheredAfterStop: 0 };
     this.openedAt = null;
     this.reliability = { interruptions: 0, recovered: 0, recent: [] };
     this.gatheringErrors = { total: 0, ungrouped: 0, groups: [] };
@@ -78,6 +79,8 @@ class SlipstreamPeer {
     this.disconnectStarted = null;
     this.channelOpened = false;
     this.trickleTimer = null;
+    this.trickleGraceElapsed = false;
+    this.remoteEndOfCandidates = false;
     this.candidateCursor = 0;
     this.receiveQueue = Promise.resolve();
     SlipstreamPeer.lastSnapshot = null;
@@ -116,6 +119,7 @@ class SlipstreamPeer {
 
       this.pc.onicecandidate = ({ candidate }) => {
         if (candidate?.candidate) this.countCandidateType(this.candidateExchange.gatheredTypes, candidate.type);
+        if (candidate?.candidate && this.channelOpened && !this.pollController) this.candidateExchange.gatheredAfterStop++;
         if (candidate && !this.isClosed && (!this.channelOpened || this.pollController)) {
           this.pendingCandidates.push(candidate.toJSON());
           this.log('local ICE candidate gathered', { type: candidate.type, family: addressFamily(candidate.address) });
@@ -250,9 +254,13 @@ class SlipstreamPeer {
         this.onStatusChange('Exchanging connection details…');
         await this.pc.setRemoteDescription(offer);
         if (signal.aborted) return;
+      }
+      // An applied offer survives a transient failure while creating or setting its answer.
+      if (!pendingAnswer && this.pc.signalingState === 'have-remote-offer') {
         const answer = await this.pc.createAnswer();
         if (signal.aborted) return;
         await this.pc.setLocalDescription(answer);
+        if (signal.aborted) return;
         pendingAnswer = { type: answer.type, sdp: answer.sdp };
       }
       if (signal.aborted) return;
@@ -293,13 +301,18 @@ class SlipstreamPeer {
         if (signal.aborted) return;
         if (readError) throw readError;
         this.logCandidatePairs();
+        // Stop at a successful poll boundary, after both gathering and the outbound drain.
+        if (this.trickleGraceElapsed && this.remoteEndOfCandidates && this.pc.iceGatheringState === 'complete') {
+          this.stopPolling('exchange-complete');
+          return;
+        }
         failures = 0;
       } catch (err) {
         if (signal.aborted) return;
         failures++;
         this.log('signaling poll failed', { status: err.status, error: err.name, failures });
         if (!transientSignalingError(err) || failures >= 5) {
-          if (this.channelOpened) this.stopPolling();
+          if (this.channelOpened) this.stopPolling('signaling-unavailable');
           else this.connectionFailed(err, 'signaling-failed');
           return;
         }
@@ -340,6 +353,8 @@ class SlipstreamPeer {
           this.processedCandidates.add(candidateKey);
           this.candidateRetries.delete(candidateKey);
           this.applied++;
+          // Slipstream negotiates one data transport and one ICE generation per session.
+          if (c?.candidate === '') this.remoteEndOfCandidates = true;
           if (c?.candidate) this.countCandidateType(this.candidateExchange.appliedTypes, candidate.type);
           this.log('remote ICE candidate accepted', { index, type: candidate.type, family: addressFamily(candidate.address) });
         } catch (candidateErr) {
@@ -382,8 +397,14 @@ class SlipstreamPeer {
       };
       this.iceTransport?.addEventListener?.('selectedcandidatepairchange', this.onPairChange);
       this.onStatusChange(this.disconnectStarted === null ? 'Connected' : 'Reconnecting…');
-      // Give both devices a few normal polls to exchange late direct candidates.
-      if (this.pollController) this.trickleTimer = setTimeout(() => this.stopPolling(), POST_OPEN_TRICKLE_MS);
+      // Some browsers omit the remote end marker. Bound the extra signaling independently
+      // of slow requests; reaching this limit must never close an already-open data channel.
+      if (this.pollController) {
+        this.trickleTimer = setTimeout(() => {
+          this.trickleGraceElapsed = true;
+          this.trickleTimer = setTimeout(() => this.stopPolling('time-limit'), MAX_POST_OPEN_MS - POST_OPEN_TRICKLE_MS);
+        }, POST_OPEN_TRICKLE_MS);
+      }
       this.onChannelOpen(channel);
     };
 
@@ -648,7 +669,13 @@ class SlipstreamPeer {
     this.onError(error || new Error("Couldn't connect to device"));
   }
 
-  stopPolling() {
+  stopPolling(reason) {
+    if (reason) {
+      this.candidateExchange.stopReason = reason;
+      this.candidateExchange.pendingAtStop = this.pendingCandidates.length;
+      this.log('post-open candidate exchange ended', { reason, pending: this.pendingCandidates.length,
+        remoteEnd: this.remoteEndOfCandidates, localGathering: this.pc?.iceGatheringState });
+    }
     clearTimeout(this.trickleTimer);
     this.trickleTimer = null;
     clearTimeout(this.pollTimer);

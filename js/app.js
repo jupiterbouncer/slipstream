@@ -274,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
       status.textContent = 'Start a pairing attempt first, then download its report here.';
       return;
     }
-    const blob = new Blob([JSON.stringify({ build: 'phase4', snapshot, entries }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ build: 'phase5', snapshot, entries }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
