@@ -42,7 +42,7 @@ Rejected candidates stay distinct from applied candidates. `InvalidStateError` i
 
 The `stability2` export identifies local, NAT-traversed and relayed selected paths. A relay at either end counts as relayed. Candidate families (IPv4, IPv6 or mDNS) appear when the browser exposes them. Check both devices' reports for application errors, pair priorities, check responses, bytes, recovery duration and closure reason. An unavailable final sample is identified explicitly. Unanswered checks alone cannot distinguish Wi-Fi client isolation, multicast filtering, routing, browser privacy or packet loss.
 
-Both devices continue exchanging candidates at the existing cadence for up to ten seconds after the channel opens. This gives late direct candidates a chance after an early relay connection. A signaling failure during this interval leaves the established channel usable.
+After opening the channel, both peers continue at the existing polling cadence. After ten seconds a successful poll can stop polling once the local browser has finished gathering, outbound writes have been acknowledged and the remote end-of-candidates marker has been applied. A thirty-second ceiling covers missing end markers or stalled signaling. Reports record the stop reason, queued rows at cutoff and candidates gathered afterward. Established transfers continue across signaling shutdown.
 
 ## Connection recovery
 
@@ -99,4 +99,4 @@ The export retains `build`, `snapshot` and `entries`. `openedAt` and `timeToOpen
 
 ## Release and rollback
 
-For a site already running the merged connected-workspace redesign, back up `index.html`, `js/app.js` and `js/webrtc.js`. Upload these two scripts first and HTML last after review. For an older site, use the complete matching frontend from the package so the redesigned workspace and QR dependencies load together. Preserve the installed TURN configuration and MySQL override. Reload both devices in fresh sessions and confirm the report says `phase4`. Roll back using the matching backed-up frontend and pair again.
+For a Phase 5 release, back up the matching HTML, stylesheet, application controller, text-sharing and WebRTC scripts. Upload the reviewed assets first and HTML last. For an older site, use the complete matching frontend from the package so the redesigned workspace and QR dependencies load together. Preserve the installed TURN configuration and MySQL override. Reload both devices in fresh sessions and confirm the report says `phase5`. Roll back using the matching backed-up frontend and pair again.

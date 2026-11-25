@@ -2011,3 +2011,40 @@ h1, h2, h3 {
   .security-strip { gap: 6px; font-size: clamp(.73rem, 3vw, .85rem); }
   .share-drop { min-height: 188px; }
 }
+
+.empty-note { color: var(--color-steel); font-size: .9rem; margin: .5rem 0; }
+.file-list:not(:empty) + .empty-note, #activity-list:not(:empty) + .empty-note,
+#activity-list:empty ~ #clear-activity { display: none; }
+.bubble pre a { display: inline; color: #175c50; text-decoration: underline; overflow-wrap: anywhere; }
+#name-feedback[data-success]:not(:empty) { color: #216e59; }
+#name-feedback[data-success]:not(:empty)::before { content: '✓ '; }
+#nickname[aria-invalid="true"] { border-color: #a53520; }
+#end-session { color: #983823; }
+@media (max-width: 640px), (orientation: landscape) and (max-height: 520px) {
+  .in-workspace .workspace-layout { grid-template-columns: minmax(0,1fr) 44px; gap: 10px; padding-block: 12px max(20px,env(safe-area-inset-bottom)); }
+  .workspace-page h1 { font-size: 2rem; letter-spacing: -.045em; margin-bottom: 16px; }
+  .workspace-page h3 { margin: 16px 0 8px; font-size: 1rem; }
+  .workspace-page .btn, .settings-actions .btn, .name-editor .btn { min-height: 44px; padding: 8px 14px; }
+  .workspace-page .file-list li { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); padding: 12px; gap: 8px; }
+  .file-list .file-details { grid-column: 1 / -1; }
+  .share-drop { min-height: 150px; padding: 16px; gap: 3px; background: var(--color-white); }
+  .share-drop .upload-icon { width: 42px; height: 42px; }
+  #queue-panel, #verified-files { margin-top: 18px; }
+  #request-status:not(:empty), #queue-feedback:not(:empty) { margin-block: 8px; color: var(--color-steel); font-size: .875rem; }
+  .conversation { height: clamp(210px,calc(var(--chat-viewport, 100dvh) - 255px),640px); }
+  #received-text { padding: 12px 9px; overscroll-behavior: contain; }
+  .bubble { max-width: 94%; margin-bottom: 10px; padding: 10px 12px 0; line-height: 1.45; }
+  .bubble.local { background: #ffede6; }
+  .bubble header { gap: 6px; }
+  .bubble pre { margin: 3px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #share-panel { flex: none; padding: 8px; background: var(--color-white); }
+  #share-text { display: block; margin: 0 0 6px; min-height: 44px; width: 100%; padding: 8px; background: var(--color-fog); border-radius: 8px; }
+  #share-feedback:not(:empty) { padding: 3px 6px; }
+  .composer-actions { align-items: center; }
+  #session-stats { line-height: 1.65; }
+  #activity-list li { background: transparent; line-height: 1.45; }
+  #modal-settings .modal-card, #scanner-dialog .modal-card { padding: 22px 18px; border-radius: 16px; }
+  #name-feedback:not(:empty) { margin-top: 6px; }
+  .settings-actions { align-items: center; }
+  #nickname { min-height: 44px; font-size: 16px; }
+}

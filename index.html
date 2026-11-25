@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="referrer" content="no-referrer">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Slipstream | Nearby Peer-to-Peer File Transfer</title>
 
   <!-- Typography (§9): Space Grotesk & IBM Plex Sans -->
@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="slipstream-favicon.svg">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="css/style.css?v=workspace1">
+  <link rel="stylesheet" href="css/style.css?v=phase5">
 </head>
 <body>
   <!-- Ambient background pattern -->
@@ -195,7 +195,7 @@
               <div id="sender-file-section" hidden>
                 <button type="button" id="file-dropzone" class="share-drop">
                   <span class="upload-icon"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h6l2 3h8v10H4Z"/><path d="m9 13 3-3 3 3m-3-3v7"/></svg></span>
-                  <strong>Drop files here</strong>
+                  <strong>Share files</strong>
                   <span>Up to 100 MiB per file</span>
                   <span class="btn btn-primary">Choose files</span>
                 </button>
@@ -356,7 +356,7 @@
                 </div>
               </section>
               <section id="verified-files" class="session-tools" hidden>
-                <h3>Verified files</h3><ul class="file-list"></ul>
+                <h3>Verified files</h3><ul class="file-list"></ul><p class="empty-note">Files you receive will appear here.</p>
               </section>
               <div id="session-tools" class="session-tools" hidden>
                 <section aria-label="File requests">
@@ -372,6 +372,7 @@
                 <section id="queue-panel" hidden>
                   <h3>Pending files</h3>
                   <ol id="queue-list" class="file-list"></ol>
+                  <p class="empty-note">Nothing queued yet.</p>
                   <div class="session-actions">
                     <button id="btn-send-file" class="btn btn-primary">Send queue</button>
                     <button id="clear-queue" class="btn btn-secondary">Clear pending</button>
@@ -398,6 +399,7 @@
               <h1>Activity</h1>
               <p id="session-stats"></p>
               <ol id="activity-list" aria-label="Session timeline"></ol>
+              <p class="empty-note">No activity yet.</p>
               <button class="btn btn-ghost" id="clear-activity">Clear activity</button>
             </section>
           </div>
@@ -427,9 +429,9 @@
     <!-- Modals (§8) -->
     <dialog class="modal-overlay" id="modal-settings" aria-labelledby="settings-title"><div class="modal-card">
       <button type="button" class="modal-close" data-close-modal aria-label="Close settings">&times;</button>
-      <h2 id="settings-title">Connection settings</h2>
-      <form id="nickname-form"><label for="nickname">Your device name</label>
-        <div class="name-editor"><input id="nickname" maxlength="32" autocomplete="off" required><button id="save-name" class="btn btn-secondary">Save name</button></div>
+      <h2 id="settings-title">Settings</h2>
+      <form id="nickname-form" novalidate><label for="nickname">Your device name</label>
+        <div class="name-editor"><input id="nickname" aria-describedby="name-feedback" maxlength="32" autocomplete="off" required><button id="save-name" class="btn btn-primary">Save name</button></div>
         <p id="name-feedback" role="status"></p>
       </form>
       <div class="settings-actions"><button class="btn btn-secondary" data-modal="modal-help">Connection diagnostics</button>
@@ -533,7 +535,7 @@
   <script src="js/file-requests.js"></script>
   <script src="js/file-queue.js"></script>
   <script src="js/file-viewer.js"></script>
-  <script src="js/share-text.js?v=workspace1"></script>
+  <script src="js/share-text.js?v=phase5"></script>
   <script src="js/scanner.js"></script>
   <script src="js/app.js?v=phase5"></script>
   <script src="js/ui-motion.js?v=workspace1"></script>
