@@ -4,6 +4,13 @@ function setupTextSharing(byId, getPeer, getName, record) {
   const log = byId('received-text');
   const form = byId('share-panel');
 
+  let feedbackTimer;
+  function notice(message, temporary = false) {
+    clearTimeout(feedbackTimer);
+    feedback.textContent = message;
+    if (temporary) feedbackTimer = setTimeout(() => { feedback.textContent = ''; }, 2000);
+  }
+
   function append(text, person) {
     const article = document.createElement('article');
     article.className = 'bubble ' + person;
@@ -18,7 +25,17 @@ function setupTextSharing(byId, getPeer, getName, record) {
     const meta = document.createElement('header');
     meta.append(author, time);
     const pre = document.createElement('pre');
-    pre.textContent = text;
+    const url = AppMessages.link(text);
+    if (url) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = text;
+      pre.append(link);
+    } else {
+      pre.textContent = text;
+    }
     article.append(meta, pre);
     const copy = document.createElement('button');
     copy.type = 'button';
@@ -26,21 +43,12 @@ function setupTextSharing(byId, getPeer, getName, record) {
     copy.onclick = async () => {
       try {
         await navigator.clipboard.writeText(text);
-        if (copy.isConnected) feedback.textContent = 'Copied.';
+        if (copy.isConnected) notice('Copied', true);
       } catch {
-        if (copy.isConnected) feedback.textContent = 'Select the message and copy manually.';
+        if (copy.isConnected) notice('Select the message and copy manually.');
       }
     };
     article.append(copy);
-    const url = AppMessages.link(text);
-    if (url) {
-      const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'Open link';
-      article.append(link);
-    }
     byId('chat-empty').hidden = true;
     log.append(article);
     log.scrollTop = log.scrollHeight;
@@ -54,19 +62,21 @@ function setupTextSharing(byId, getPeer, getName, record) {
       const text = await navigator.clipboard.readText();
       if (peer === getPeer()) input.value = text;
     } catch {
-      if (peer === getPeer()) feedback.textContent = 'Paste directly into the text field.';
+      if (peer === getPeer()) notice('Paste directly into the text field.');
     }
     if (peer === getPeer()) input.focus();
   };
   form.onsubmit = event => {
     event.preventDefault();
+    if (byId('send-text').disabled) return;
     const text = input.value;
     if (!AppMessages.send(getPeer(), 'share-text', { text })) {
-      feedback.textContent = 'Enter a message of up to 8 KiB and check your connection.';
+      notice('Enter a message up to 8 KiB and check your connection.');
       return;
     }
     append(text, 'local');
-    input.value = feedback.textContent = '';
+    input.value = '';
+    notice('Sent', true);
     input.focus();
   };
   input.onkeydown = event => {
@@ -75,9 +85,21 @@ function setupTextSharing(byId, getPeer, getName, record) {
       form.requestSubmit();
     }
   };
+  // Safari can resize the visual viewport while leaving the layout viewport unchanged.
+  const viewport = window.visualViewport;
+  function fitComposer() {
+    if (document.activeElement !== input || !viewport || !matchMedia('(max-width: 640px), (max-height: 520px)').matches) return;
+    form.parentElement.style.setProperty('--chat-viewport', viewport.height + 'px');
+    form.scrollIntoView({ block: 'nearest' });
+  }
+  viewport?.addEventListener('resize', fitComposer);
+  input.addEventListener('focus', fitComposer);
+  input.addEventListener('blur', () => form.parentElement.style.removeProperty('--chat-viewport'));
+
   return {
     receive(text) { append(text, 'peer'); },
     clear() {
+      clearTimeout(feedbackTimer);
       input.value = feedback.textContent = '';
       log.replaceChildren();
       byId('chat-empty').hidden = false;

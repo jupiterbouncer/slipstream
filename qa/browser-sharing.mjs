@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+
+// Optional review artifacts. Screens contain only the test session and synthetic files.
+async function captureWorkspace(tab, directory) {
+  await mkdir(directory, { recursive: true });
+  await tab.command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  for (const view of ['files', 'messages', 'activity', 'settings']) {
+    await tab.click(view === 'settings' ? '.settings-trigger' : '#tab-' + view);
+    await tab.evaluate('window.scrollTo(0, 0); Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {})))');
+    const { data } = await tab.command('Page.captureScreenshot', { format: 'png' });
+    await writeFile(path.join(directory, view + '.png'), Buffer.from(data, 'base64'));
+  }
+  await tab.click('#modal-settings [data-close-modal]');
+  await tab.click('#tab-files');
+}
 
 // Runs after the first verified download, on the same local WebRTC connection.
 export async function checkSharing({ sender, receiver, temp, waitFor }) {
@@ -9,9 +23,14 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
     'document.getElementById(' + JSON.stringify(id) + ').value = ' + JSON.stringify(value));
 
   await sender.click('.settings-trigger');
+  await fill(sender, 'nickname', '   ');
+  await sender.click('#save-name');
+  assert.ok(await sender.evaluate("document.activeElement.id === 'nickname' && document.activeElement.getAttribute('aria-invalid') === 'true'"));
   await fill(sender, 'nickname', 'Study laptop');
   await sender.click('#save-name');
   await wait(receiver, 'peer nickname', "document.querySelector('#peer-device-label').textContent === 'Study laptop'");
+  assert.equal(await sender.evaluate("document.querySelector('#name-feedback').textContent"), 'Name updated');
+  await wait(sender, 'temporary name confirmation clears', "document.querySelector('#name-feedback').textContent === ''");
   await sender.click('#modal-settings [data-close-modal]');
   await sender.click('#tab-messages');
   await receiver.click('#tab-messages');
@@ -29,9 +48,10 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
   await sender.click('#send-text');
   await wait(receiver, 'literal text delivery', "document.querySelector('#received-text article:last-child pre')?.textContent === " + JSON.stringify(snippet));
   assert.ok(await receiver.evaluate("!document.querySelector('#received-text b')"));
-  await fill(sender, 'share-text', 'https://example.org/notes');
+  const longLink = 'https://example.org/notes?' + 'x'.repeat(160);
+  await fill(sender, 'share-text', longLink);
   await sender.click('#send-text');
-  await wait(receiver, 'explicit safe link', "document.querySelector('#received-text a')?.href === 'https://example.org/notes'");
+  await wait(receiver, 'explicit safe link', "document.querySelector('#received-text a')?.href === " + JSON.stringify(longLink));
 
   await sender.click('#tab-files');
   await receiver.click('#tab-files');
@@ -65,6 +85,8 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
   await sender.click('#file-viewer button');
   await wait(sender, 'preview URL revoked', 'fetch(' + JSON.stringify(url) + ').then(() => false, () => true)');
 
+  if (process.env.SLIPSTREAM_SCREENSHOTS) await captureWorkspace(sender, process.env.SLIPSTREAM_SCREENSHOTS);
+
   for (const tab of [sender, receiver]) {
 
     for (const width of [320, 360, 375, 390, 430, 768, 1280]) {
@@ -82,6 +104,19 @@ export async function checkSharing({ sender, receiver, temp, waitFor }) {
       }
     }
   }
+  // A shortened viewport exercises composer access; native iOS keyboard behavior needs a device.
+  for (const [width, height] of [[390, 385], [844, 390]]) {
+    await sender.command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
+    await sender.click('#tab-messages');
+    await sender.click('#share-text');
+    assert.ok(await sender.evaluate(`(() => {
+      const send = document.querySelector('#send-text').getBoundingClientRect();
+      const field = document.querySelector('#share-text').getBoundingClientRect();
+      return send.bottom <= innerHeight + 1 && field.top >= -1 && send.top >= field.bottom &&
+        document.querySelector('.workspace-rail').getBoundingClientRect().left >= send.right;
+    })()`), 'composer reachable at ' + width + ' x ' + height);
+  }
+  await sender.click('#tab-files');
   await sender.click('#btn-send-file');
   await wait(receiver, 'first queue offer', "document.querySelector('#incoming-filename').textContent === " + JSON.stringify(longName));
   assert.ok(await receiver.evaluate(`(() => {

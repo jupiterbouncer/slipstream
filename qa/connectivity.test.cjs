@@ -287,7 +287,14 @@ test('bounded post-open signaling exchanges a late mDNS candidate; expired sessi
     assert.equal(exchange.acknowledged, posted.length);
     assert.equal(exchange.postAttempts, posted.length);
     assert.equal(exchange.gatheredTypes.host, 1);
-    if (!expired) await f.fire(10000);
+    if (!expired) {
+      await f.fire(10000);
+      pc.onicecandidate({ candidate: { candidate: 'late.local', type: 'host', toJSON: () => ({ candidate: 'late.local' }) } });
+      await f.fire(2500);
+      assert.equal(posted.length, 2);
+      await f.fire(20000);
+      assert.equal(f.peer.snapshot().candidateExchange.stopReason, 'time-limit');
+    }
     assert.equal(f.timers.size, 0);
     assert.equal(f.peer.isChannelOpen(), true);
     assert.equal(f.errors.length, 0);
@@ -375,4 +382,64 @@ test('pair change during an outstanding sample refreshes the route without a pol
   pending.shift()(new Map());
   await flush();
   assert.equal(f.peer.constructor.lastSnapshot.lastKnownSelection.kind, 'local');
+});
+
+test('post-open grace expiry cannot abort an in-flight direct candidate POST', async () => {
+  let finishPost;
+  const f = fixture({ SLIPSTREAM_TURN_CONFIG: {}, Api: {
+    getIceCandidates: async () => [],
+    sendIceCandidate: () => new Promise(resolve => { finishPost = resolve; }),
+  } });
+  await f.peer.start();
+  const pc = f.peer.pc;
+  pc.remoteDescription = {};
+  pc.ondatachannel({ channel: { readyState: 'open', close() {} } });
+  f.peer.dataChannel.onopen();
+  pc.onicecandidate({ candidate: { type: 'host', candidate: 'late', toJSON: () => ({ candidate: 'late' }) } });
+  const post = f.fire(2500);
+  await flush();
+  await f.fire(10000);
+  finishPost();
+  await post;
+  assert.equal(f.peer.snapshot().candidateExchange.acknowledged, 1);
+  assert.equal(f.peer.pendingCandidates.length, 0);
+  f.peer.close();
+});
+
+test('joiner retries answer creation after successfully applying the remote offer', async () => {
+  let offers = 0, answers = 0, sent = 0;
+  const f = fixture({ SLIPSTREAM_TURN_CONFIG: {}, Api: {
+    getOffer: async () => { offers++; return { type: 'offer', sdp: 'example' }; },
+    sendAnswer: async () => { sent++; }, getIceCandidates: async () => [],
+  } });
+  await f.peer.start();
+  const pc = f.peer.pc;
+  pc.setRemoteDescription = async value => { pc.remoteDescription = value; pc.signalingState = 'have-remote-offer'; };
+  pc.createAnswer = async () => {
+    if (++answers === 1) throw Object.assign(new Error(), { name: 'InvalidStateError' });
+    return { type: 'answer', sdp: 'example' };
+  };
+  pc.setLocalDescription = async value => { pc.localDescription = value; pc.signalingState = 'stable'; };
+  await f.fire(2500);
+  await f.fire(5000);
+  assert.equal(offers, 1);
+  assert.equal(sent, 1);
+  f.peer.close();
+});
+
+test('complete gathering and an applied end marker retire the poller after a final drain', async () => {
+  const f = fixture({ SLIPSTREAM_TURN_CONFIG: {}, Api: { getIceCandidates: async () => [{ candidate: '' }] } });
+  await f.peer.start();
+  const pc = f.peer.pc;
+  pc.remoteDescription = {};
+  pc.iceGatheringState = 'complete';
+  pc.addIceCandidate = async () => {};
+  pc.ondatachannel({ channel: { readyState: 'open', close() {} } });
+  f.peer.dataChannel.onopen();
+  await f.fire(10000);
+  await f.fire(2500);
+  assert.equal(f.peer.snapshot().candidateExchange.stopReason, 'exchange-complete');
+  assert.equal(f.timers.size, 0);
+  assert.ok(f.peer.isChannelOpen());
+  f.peer.close();
 });

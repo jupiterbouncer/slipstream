@@ -9,7 +9,8 @@ import { setTimeout as pause } from 'node:timers/promises';
 
 // Run against the packaged frontend served by local PHP/MySQL on port 8137.
 // The test creates and deletes its own sessions and uses temporary Chrome profiles.
-const origin = process.argv[2] || 'http://127.0.0.1:8137';
+const directOnly = process.argv.includes('--stun-only');
+const origin = process.argv.slice(2).find(arg => !arg.startsWith('--')) || 'http://127.0.0.1:8137';
 assert.ok(['http://127.0.0.1:8137'].includes(origin));
 const chrome = process.env.CHROME_BIN || (process.platform === 'win32'
   ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : 'google-chrome');
@@ -23,6 +24,33 @@ async function waitFor(label, check) {
     await pause(125);
   } while (Date.now() < deadline);
   throw new Error('Timed out waiting for ' + label);
+}
+
+async function checkDirectPeers(sender, receiver, stage) {
+  for (const [role, tab] of [['host', sender], ['joiner', receiver]]) {
+    const sample = await tab.evaluate(`(async () => {
+      const cfg = testPeer.getConfiguration();
+      const stats = await testPeer.getStats();
+      const transport = [...stats.values()].find(row => row.type === 'transport' && row.selectedCandidatePairId);
+      const pair = stats.get(transport?.selectedCandidatePairId);
+      const events = SlipstreamPeer.diagnostics;
+      const count = name => events.filter(entry => entry.event === name).length;
+      return {
+        all: cfg.iceTransportPolicy === 'all', stun: cfg.iceServers.flatMap(s => s.urls),
+        disabled: events.some(e => e.event === 'TURN configuration' && e.outcome === 'disabled'),
+        open: events.some(e => e.event === 'data channel open') && testPeer.connectionState === 'connected',
+        local: stats.get(pair?.localCandidateId)?.candidateType, remote: stats.get(pair?.remoteCandidateId)?.candidateType,
+        state: pair?.state, responses: pair?.responsesReceived, bytes: pair?.bytesReceived,
+        gathered: count('local ICE candidate gathered'), posted: count('local ICE candidate acknowledged'),
+        applied: count('remote ICE candidate accepted'),
+      };
+    })()`);
+    assert.ok(sample.all && sample.disabled && sample.open);
+    assert.deepEqual(sample.stun, ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']);
+    assert.equal(sample.state, 'succeeded');
+    for (const type of [sample.local, sample.remote]) assert.ok(['host', 'srflx', 'prflx'].includes(type));
+    console.log(stage, role, JSON.stringify(sample));
+  }
 }
 
 async function browser(role) {
@@ -103,10 +131,17 @@ async function browser(role) {
 
 try {
   const [sender, receiver] = await Promise.all([browser('sender'), browser('receiver')]);
+  if (directOnly) {
+    // Scope the override to these disposable profiles, including QR navigation and retries.
+    for (const tab of [sender, receiver]) await tab.command('Page.addScriptToEvaluateOnNewDocument', {
+      source: "Object.defineProperty(window, 'SLIPSTREAM_TURN_CONFIG', { get: () => ({}), set() {} });",
+    });
+  }
   await sender.command('Page.addScriptToEvaluateOnNewDocument', { source: `
     window.RTCPeerConnection = class extends RTCPeerConnection {
       constructor(...args) {
         super(...args);
+        window.testPeer = this;
         window.appliedCandidates = { accepted: 0, failed: 0 };
       }
       async addIceCandidate(candidate) {
@@ -187,6 +222,7 @@ try {
   const fixture = path.join(temp, name);
   await writeFile(fixture, original);
   await sender.selectFiles('#file-input', [fixture]);
+  if (directOnly) await checkDirectPeers(sender, receiver, 'before offer');
   await sender.click('#btn-send-file');
   await waitFor('offer',()=>receiver.evaluate("!!document.querySelector('#btn-accept-transfer').getClientRects().length"));
   await receiver.click('#tab-messages');
@@ -245,6 +281,7 @@ try {
   await receiver.click('#btn-download-file');
   const bytes = await waitFor('download', () => readFile(path.join(downloadPath, name)).catch(() => null));
   assert.deepEqual(bytes, original);
+  if (directOnly) await checkDirectPeers(sender, receiver, 'after verified download');
   console.log(origin, bytes.length, 'bytes verified and downloaded. SHA-256', createHash('sha256').update(bytes).digest('hex'));
   if (process.argv.includes('--soak')) {
     const route = () => receiver.evaluate(`(async () => {
@@ -279,7 +316,7 @@ try {
   const reportBytes = await waitFor('connection report download', () =>
     readFile(path.join(downloadPath, 'slipstream-connection.json')).catch(() => null));
   const report = JSON.parse(reportBytes);
-  assert.equal(report.build, 'phase4');
+  assert.equal(report.build, 'phase5');
   assert.ok(report.snapshot.openedAt && report.snapshot.reason);
   assert.ok(report.snapshot.candidateExchange.receivedRows >= report.snapshot.applied);
   assert.equal(report.snapshot.channelOpen, false);

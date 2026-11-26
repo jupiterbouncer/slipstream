@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let sessionTimer;
   let transferName = '';
   let activityRows = 0;
+  let nameFeedbackTimer;
 
   function renderSession() {
     if (!session) return;
@@ -78,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function beginSession() {
     session = new SharingSession();
+    verifiedFiles.hidden = state.role !== 'joiner';
     if (state.role === 'host') queue = new FileQueue(startFileSend, renderQueue);
     requests = new FileRequests(state.peer, message => {
       byId('request-status').textContent = message;
@@ -103,6 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function clearSession() {
+    clearTimeout(nameFeedbackTimer);
+    byId('nickname').removeAttribute('aria-invalid');
+    byId('name-feedback').removeAttribute('data-success');
     requests?.close();
     requests = pickerRequest = null;
     byId('request-choice').hidden = true;
@@ -274,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
       status.textContent = 'Start a pairing attempt first, then download its report here.';
       return;
     }
-    const blob = new Blob([JSON.stringify({ build: 'phase4', snapshot, entries }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ build: 'phase5', snapshot, entries }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -361,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     headerStatus.classList.toggle('connected', open && !recovering);
     headerStatus.classList.toggle('recovering', recovering);
     headerStatusText.textContent = recovering ? 'Reconnecting…' : open ? 'Connected' : 'Local Network';
-    byId('send-text').disabled = !open || recovering;
+    byId('paste-text').disabled = byId('send-text').disabled = !open || recovering;
     renderRoute();
   }
 
@@ -701,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url);
         const section = row.closest('section');
         row.remove();
-        section.hidden = !section.querySelector('li');
+        if (section === savedFiles) section.hidden = !section.querySelector('li');
       }));
     verifiedFiles.querySelector('ul').append(row);
     verifiedFiles.hidden = false;
@@ -1188,7 +1193,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const panel = byId('queue-panel');
     const list = byId('queue-list');
     list.replaceChildren();
-    panel.hidden = !queue?.pending.length;
+    panel.hidden = !queue;
+    panel.querySelector('.session-actions').hidden = !queue?.pending.length;
     if (!queue) return;
     for (const [index, file] of queue.pending.entries()) {
       const row = document.createElement('li');
@@ -1330,14 +1336,26 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   byId('nickname-form').addEventListener('submit', event => {
     event.preventDefault();
-    const name = AppMessages.nickname(byId('nickname').value);
+    const input = byId('nickname');
+    const feedback = byId('name-feedback');
+    clearTimeout(nameFeedbackTimer);
+    feedback.removeAttribute('data-success');
+    const name = AppMessages.nickname(input.value);
+    input.setAttribute('aria-invalid', String(!name));
+    if (!name) {
+      feedback.textContent = 'Enter a device name.';
+      input.focus();
+      return;
+    }
     if (!AppMessages.send(state.peer, 'device-name', { name })) {
-      byId('name-feedback').textContent = 'Enter a name and check that the connection is open.';
+      feedback.textContent = 'Reconnect to update your name.';
       return;
     }
     localDeviceLabel.textContent = byId('nickname').value = name;
     refreshNames();
-    byId('name-feedback').textContent = 'Name shared.';
+    feedback.dataset.success = 'true';
+    feedback.textContent = 'Name updated';
+    nameFeedbackTimer = setTimeout(() => { feedback.textContent = ''; }, 2400);
   });
   byId('new-code').addEventListener('click', regenerateCode);
   for (const id of ['copy-code', 'copy-link']) {
